@@ -1,6 +1,5 @@
 import { supabase } from './supabase'
 import type { Memory, Group, GroupMember } from './supabase'
-import { sampleMemories, sampleGroups } from './sample-data'
 
 // ==================== MEMORIES ====================
 

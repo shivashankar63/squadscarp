@@ -52,12 +52,7 @@ import {
   XCircle,
   AlertCircle,
   Info,
-  Menu,
-  Calendar as CalendarIcon,
-  Tag,
   ZoomIn,
-  Eye,
-  Maximize,
   Upload,
   FileImage,
   AlertCircle as AlertCircleIcon,
@@ -73,7 +68,6 @@ import {
   deleteMemory as deleteMemoryFromDB,
   updateMemory as updateMemoryInDB,
 } from './lib/database'
-import { supabase } from './lib/supabase'
 
 type Page =
   | 'landing'
@@ -369,7 +363,7 @@ function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
 function ExplorePage({ 
   onViewDashboard, 
   onBack,
-  showToast,
+  showToast: _showToast,
 }: { 
   onViewDashboard: (groupName: string) => void
   onBack: () => void
@@ -377,11 +371,9 @@ function ExplorePage({
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [showSuggestions, setShowSuggestions] = useState(false)
   const [recentSearches, setRecentSearches] = useState<string[]>([])
-  const [showFilters, setShowFilters] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [selectedDateRange, setSelectedDateRange] = useState<string>('all')
+  const [selectedCategory] = useState<string>('all')
+  const [selectedDateRange] = useState<string>('all')
   const [availableGroups, setAvailableGroups] = useState<Array<{
     id: number | string
     name: string
@@ -457,10 +449,6 @@ function ExplorePage({
     loadGroups()
   }, [searchQuery, selectedCategory, selectedDateRange])
 
-  const searchSuggestions = availableGroups
-    .filter((group) => group.name.toLowerCase().includes(searchQuery.toLowerCase()) && group.isPublic)
-    .slice(0, 5)
-    .map((group) => group.name)
 
   const filteredGroups = availableGroups.filter((group) => {
     const matchesSearch = group.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -644,8 +632,9 @@ function ExplorePage({
   )
 }
 
-// Lightbox Component for Image Viewing
-function Lightbox({
+// Lightbox Component for Image Viewing (currently unused - kept for future use)
+// @ts-expect-error - Intentionally unused, kept for future use
+function _Lightbox({
   isOpen,
   onClose,
   image,
@@ -704,8 +693,9 @@ function Lightbox({
   )
 }
 
-// Form Input Component with Validation
-function FormInput({
+// Form Input Component with Validation (currently unused - kept for future use)
+// @ts-expect-error - Intentionally unused, kept for future use
+function _FormInput({
   label,
   value,
   onChange,
@@ -877,8 +867,6 @@ function MemoryDashboard({
   const [selectedTool, setSelectedTool] = useState<string | null>(null)
   const [layout, setLayout] = useState<'grid' | 'masonry' | 'timeline'>('masonry')
   const [isLoading, setIsLoading] = useState(true)
-  const [lightboxImage, setLightboxImage] = useState<{ image: string; title: string; description?: string } | null>(null)
-  const [hoveredMemory, setHoveredMemory] = useState<number | string | null>(null)
   const [featuredMemories, setFeaturedMemories] = useState<Array<{
     id: number | string
     title: string
@@ -1319,15 +1307,13 @@ function MemoryDashboard({
                 <div className="absolute inset-0 bg-gradient-to-br from-pink-500/0 via-purple-500/0 to-indigo-500/0 group-hover:from-pink-500/15 group-hover:via-purple-500/10 group-hover:to-indigo-500/10 transition-all duration-500"></div>
                 
                 {/* Hover Preview - Quick Actions */}
-                {hoveredMemory === memory.id && !editMode && (
+                {!editMode && (
                   <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         if (onViewMemory) {
                           onViewMemory(String(memory.id))
-                        } else {
-                          setLightboxImage({ image: memory.image, title: memory.title, description: memory.category })
                         }
                       }}
                       className="px-4 py-2 bg-white/90 backdrop-blur-md rounded-xl hover:bg-white transition-all duration-200 shadow-xl hover:scale-110 flex items-center gap-2 text-gray-700 font-semibold"
@@ -2044,16 +2030,16 @@ function ScrapbookHomeContent({
 function DiscoverPage({
   onHome,
   onCreate,
-  onProfile,
-  onMemoryFeed,
-  onDiscover,
-  onLifePath,
-  onShare,
-  onCapture,
-  onCalendar,
-  onFavorites,
-  onStarred,
-  showToast,
+  onProfile: _onProfile,
+  onMemoryFeed: _onMemoryFeed,
+  onDiscover: _onDiscover,
+  onLifePath: _onLifePath,
+  onShare: _onShare,
+  onCapture: _onCapture,
+  onCalendar: _onCalendar,
+  onFavorites: _onFavorites,
+  onStarred: _onStarred,
+  showToast: _showToast,
 }: {
   onHome: () => void
   onCreate: () => void
@@ -2306,7 +2292,7 @@ function DiscoverPage({
                 </button>
                 <button 
                   onClick={() => {
-                    if (showToast) showToast(`Opening ${currentProject.title} gallery`, 'info')
+                    if (_showToast) _showToast(`Opening ${currentProject.title} gallery`, 'info')
                     onHome()
                   }}
                   className="flex-1 bg-pink-300 text-white py-3 rounded-full text-sm font-medium hover:bg-pink-400 transition-colors hover:scale-105"
@@ -2335,7 +2321,7 @@ function DiscoverPage({
 
 function CreateMemoryPage({
   onHome,
-  onSettings,
+  onSettings: _onSettings,
   showToast,
 }: {
   onHome: () => void
@@ -2476,7 +2462,7 @@ function CreateMemoryPage({
           <button className="p-2 hover:bg-gray-100 rounded-lg">
             <Share2 className="w-5 h-5 text-gray-600" />
           </button>
-          <button className="p-2 hover:bg-gray-100 rounded-lg" onClick={onSettings}>
+          <button className="p-2 hover:bg-gray-100 rounded-lg" onClick={_onSettings}>
             <Settings className="w-5 h-5 text-gray-600" />
           </button>
           <button className="p-2 hover:bg-gray-100 rounded-lg">
@@ -2757,8 +2743,7 @@ function CreateMemoryPage({
   )
 }
 
-function ProfilePage({ onHome, onSettings, onAddCollaborator, showToast }: { onHome: () => void; onSettings: () => void; onAddCollaborator: () => void; showToast?: (message: string, type?: ToastType) => void }) {
-  const [activeTab] = useState('profile')
+function ProfilePage({ onHome, onSettings: _onSettings, onAddCollaborator, showToast }: { onHome: () => void; onSettings: () => void; onAddCollaborator: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const handleInvite = () => {
     if (showToast) showToast('Invitation sent!', 'success')
   }
@@ -5010,7 +4995,7 @@ function MonthViewPage({
   year, 
   images, 
   onBack, 
-  showToast 
+  showToast: _showToast 
 }: { 
   month: string
   year: string
@@ -6231,19 +6216,63 @@ export default function ScrapbookHome() {
 
   if (page === 'landing') {
     return (
-      <div className={isTransitioning ? 'opacity-0 transition-opacity duration-150' : 'opacity-100 transition-opacity duration-300'}>
-        <ScrapbookLanding onStart={() => handlePageChange('home')} />
-      </div>
+      <>
+        <div className={isTransitioning ? 'opacity-0 transition-opacity duration-150' : 'opacity-100 transition-opacity duration-300'}>
+          <ScrapbookLanding onStart={() => handlePageChange('home')} />
+        </div>
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
+        <ConfirmationDialog
+          isOpen={showConfirmDialog}
+          onClose={() => {
+            setShowConfirmDialog(false)
+            setConfirmDialogConfig(null)
+          }}
+          onConfirm={() => {
+            if (confirmDialogConfig) {
+              confirmDialogConfig.onConfirm()
+              setShowConfirmDialog(false)
+              setConfirmDialogConfig(null)
+            }
+          }}
+          title={confirmDialogConfig?.title || ''}
+          message={confirmDialogConfig?.message || ''}
+          confirmText={confirmDialogConfig?.confirmText}
+          cancelText={confirmDialogConfig?.cancelText}
+          type={confirmDialogConfig?.type}
+        />
+      </>
     )
   }
 
   // Helper to wrap pages with navigation
   const withNav = (pageContent: React.ReactNode) => (
-    <PageWithNav currentPage={page} onNavigate={handlePageChange}>
-      <div className={isTransitioning ? 'opacity-0 transition-opacity duration-150' : 'opacity-100 transition-opacity duration-300'}>
-        {pageContent}
-      </div>
-    </PageWithNav>
+    <>
+      <PageWithNav currentPage={page} onNavigate={handlePageChange}>
+        <div className={isTransitioning ? 'opacity-0 transition-opacity duration-150' : 'opacity-100 transition-opacity duration-300'}>
+          {pageContent}
+        </div>
+      </PageWithNav>
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ConfirmationDialog
+        isOpen={showConfirmDialog}
+        onClose={() => {
+          setShowConfirmDialog(false)
+          setConfirmDialogConfig(null)
+        }}
+        onConfirm={() => {
+          if (confirmDialogConfig) {
+            confirmDialogConfig.onConfirm()
+            setShowConfirmDialog(false)
+            setConfirmDialogConfig(null)
+          }
+        }}
+        title={confirmDialogConfig?.title || ''}
+        message={confirmDialogConfig?.message || ''}
+        confirmText={confirmDialogConfig?.confirmText}
+        cancelText={confirmDialogConfig?.cancelText}
+        type={confirmDialogConfig?.type}
+      />
+    </>
   )
 
   if (page === 'home') {
@@ -6658,5 +6687,29 @@ export default function ScrapbookHome() {
   }
 
   // Default to landing page (should not reach here)
-  return <ScrapbookLanding onStart={() => handlePageChange('home')} />
+  return (
+    <>
+      <ScrapbookLanding onStart={() => handlePageChange('home')} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ConfirmationDialog
+        isOpen={showConfirmDialog}
+        onClose={() => {
+          setShowConfirmDialog(false)
+          setConfirmDialogConfig(null)
+        }}
+        onConfirm={() => {
+          if (confirmDialogConfig) {
+            confirmDialogConfig.onConfirm()
+            setShowConfirmDialog(false)
+            setConfirmDialogConfig(null)
+          }
+        }}
+        title={confirmDialogConfig?.title || ''}
+        message={confirmDialogConfig?.message || ''}
+        confirmText={confirmDialogConfig?.confirmText}
+        cancelText={confirmDialogConfig?.cancelText}
+        type={confirmDialogConfig?.type}
+      />
+    </>
+  )
 }
