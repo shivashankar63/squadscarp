@@ -56,6 +56,7 @@ import {
   Upload,
   FileImage,
   AlertCircle as AlertCircleIcon,
+  Menu,
 } from 'lucide-react'
 import { 
   createMemory, 
@@ -130,44 +131,82 @@ function PersistentNavSidebar({
   ]
 
   return (
-    <div className="fixed left-0 top-0 h-full w-20 bg-white border-r border-gray-200 flex flex-col items-center py-6 space-y-4 z-50 overflow-y-auto">
-      {navItems.map((item) => {
-        const Icon = item.icon
-        const isActive = currentPage === item.page
-        return (
-          <button
-            key={item.page}
-            onClick={() => onNavigate(item.page)}
-            className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
-              isActive
-                ? 'bg-pink-400 text-white'
-                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-            }`}
-            title={item.label}
-          >
-            <Icon className="w-5 h-5" />
-          </button>
-        )
-      })}
-      <div className="flex-1"></div>
-      <button
-        onClick={() => onNavigate('settings')}
-        className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
-          currentPage === 'settings'
-            ? 'bg-pink-400 text-white'
-            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-        }`}
-        title="Settings"
-      >
-        <Settings className="w-5 h-5" />
-      </button>
-      <button
-        className="w-10 h-10 hover:bg-gray-100 rounded-lg flex items-center justify-center transition-colors"
-        title="Log Out"
-      >
-        <LogOut className="w-5 h-5 text-gray-400" />
-      </button>
-    </div>
+    <>
+      {/* Desktop Sidebar - Hidden on mobile */}
+      <div className="hidden md:flex fixed left-0 top-0 h-full w-20 bg-white border-r border-gray-200 flex-col items-center py-6 space-y-4 z-50 overflow-y-auto">
+        {navItems.map((item) => {
+          const Icon = item.icon
+          const isActive = currentPage === item.page
+          return (
+            <button
+              key={item.page}
+              onClick={() => onNavigate(item.page)}
+              className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
+                isActive
+                  ? 'bg-pink-400 text-white'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+              }`}
+              title={item.label}
+            >
+              <Icon className="w-5 h-5" />
+            </button>
+          )
+        })}
+        <div className="flex-1"></div>
+        <button
+          onClick={() => onNavigate('settings')}
+          className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
+            currentPage === 'settings'
+              ? 'bg-pink-400 text-white'
+              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+          }`}
+          title="Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
+        <button
+          className="w-10 h-10 hover:bg-gray-100 rounded-lg flex items-center justify-center transition-colors"
+          title="Log Out"
+        >
+          <LogOut className="w-5 h-5 text-gray-400" />
+        </button>
+      </div>
+
+      {/* Mobile Bottom Navigation - Visible on mobile only */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex items-center justify-around px-2 py-2 z-50 safe-area-inset-bottom shadow-lg">
+        {navItems.slice(0, 4).map((item) => {
+          const Icon = item.icon
+          const isActive = currentPage === item.page
+          return (
+            <button
+              key={item.page}
+              onClick={() => onNavigate(item.page)}
+              className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-colors min-h-[60px] ${
+                isActive
+                  ? 'text-pink-500'
+                  : 'text-gray-400'
+              }`}
+              title={item.label}
+            >
+              <Icon className="w-6 h-6 mb-1" />
+              <span className="text-xs font-medium">{item.label}</span>
+            </button>
+          )
+        })}
+        <button
+          onClick={() => onNavigate('favorites')}
+          className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-colors min-h-[60px] ${
+            currentPage === 'favorites' || currentPage === 'starred'
+              ? 'text-pink-500'
+              : 'text-gray-400'
+          }`}
+          title="More"
+        >
+          <MoreHorizontal className="w-6 h-6 mb-1" />
+          <span className="text-xs font-medium">More</span>
+        </button>
+      </div>
+    </>
   )
 }
 
@@ -1487,10 +1526,39 @@ function ScrapbookHomeContent({
   onDashboard: () => void
   onExplore: () => void
 }) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
   return (
-    <div className="min-h-screen bg-gray-100 flex">
-      {/* Left Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+    <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row">
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-lg"
+      >
+        <Menu className="w-6 h-6 text-gray-700" />
+      </button>
+
+      {/* Left Sidebar - Hidden on mobile, shown as overlay when menu is open */}
+      <div className={`${isMobileMenuOpen ? 'fixed inset-0 z-40' : 'hidden'} md:flex md:relative md:z-auto w-64 bg-white border-r border-gray-200 flex-col`}>
+        {/* Mobile overlay backdrop */}
+        {isMobileMenuOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 md:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+        
+        {/* Sidebar content */}
+        <div className="relative bg-white h-full flex flex-col z-50">
+          <div className="p-4 md:p-6 border-b border-gray-200 flex items-center justify-between">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-800">Welcome to</h1>
+            <button
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="md:hidden p-2 hover:bg-gray-100 rounded-lg"
+            >
+              <X className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
         <div className="p-6 border-b border-gray-200">
           <h1 className="text-2xl font-bold text-gray-800">Welcome to</h1>
         </div>
@@ -1615,12 +1683,13 @@ function ScrapbookHomeContent({
             <span className="text-sm">Log Out</span>
           </button>
         </div>
+        </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto w-full">
         {/* Top Bar */}
-        <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+        <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-10">
           <div className="flex-1 max-w-xl">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -2171,11 +2240,11 @@ function DiscoverPage({
 
 
       {/* Main Content */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex flex-col md:flex-row">
         {/* Projects List */}
-        <div className="w-2/5 bg-white p-8 overflow-y-auto max-h-screen">
-          <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-light text-gray-700">Your Memories</h1>
+        <div className="w-full md:w-2/5 bg-white p-4 md:p-8 overflow-y-auto max-h-screen">
+          <div className="flex items-center justify-between mb-4 md:mb-8">
+          <h1 className="text-xl md:text-3xl font-light text-gray-700">Your Memories</h1>
             <button className="flex items-center gap-2 bg-pink-300 text-white px-4 py-2 rounded-lg text-sm hover:bg-pink-400 transition-colors flex-shrink-0">
               <Clock className="w-4 h-4" />
               Timeline
@@ -2222,10 +2291,10 @@ function DiscoverPage({
         </div>
 
         {/* Project Detail - Right Side */}
-        <div className="flex-1 bg-gray-50 relative">
+        <div className="flex-1 bg-gray-50 relative w-full md:w-auto">
           {/* Scrollable content preview */}
           <div className="h-screen overflow-y-auto">
-            <div className="p-8 pt-20 pb-20">
+            <div className="p-4 md:p-8 pt-16 md:pt-20 pb-20">
               {/* Hero Image Area */}
               <div className="w-full h-80 bg-gradient-to-br from-gray-200 to-gray-300 rounded-2xl mb-8 overflow-hidden relative">
                 <img src={currentProject.image} alt={currentProject.title} className="w-full h-full object-cover" />
@@ -6066,7 +6135,7 @@ function PageWithNav({
   return (
     <div className="flex min-h-screen bg-gray-50">
       <PersistentNavSidebar currentPage={currentPage} onNavigate={onNavigate} />
-      <div className="flex-1 ml-20">{children}</div>
+      <div className="flex-1 md:ml-20 pb-20 md:pb-0">{children}</div>
     </div>
   )
 }
@@ -6075,8 +6144,8 @@ function PageWithNav({
 function ScrapbookLanding({ onStart }: { onStart: () => void }) {
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
-      {/* Right side abstract graphic area - grouped shapes cluster */}
-      <div className="absolute right-0 top-0 bottom-0 w-2/3 pointer-events-none flex items-center justify-center">
+      {/* Right side abstract graphic area - grouped shapes cluster - Hidden on mobile */}
+      <div className="hidden md:flex absolute right-0 top-0 bottom-0 w-2/3 pointer-events-none items-center justify-center">
         <div className="relative w-full h-full max-w-2xl max-h-2xl">
           {/* Central cluster of large circles - grouped together */}
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
@@ -6127,25 +6196,25 @@ function ScrapbookLanding({ onStart }: { onStart: () => void }) {
       </div>
 
       {/* Main content */}
-      <div className="relative z-10 max-w-7xl mx-auto px-8 py-16">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-8 sm:py-12 md:py-16">
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-20">
-          <div className="w-10 h-8 bg-pink-400 rounded-lg flex items-center justify-center shadow-md">
-            <Edit3 className="w-5 h-5 text-white" />
+        <div className="flex items-center gap-3 mb-8 sm:mb-12 md:mb-20">
+          <div className="w-8 h-6 sm:w-10 sm:h-8 bg-pink-400 rounded-lg flex items-center justify-center shadow-md">
+            <Edit3 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <span className="text-lg text-gray-600 font-light">SquadScrapbook</span>
+          <span className="text-base sm:text-lg text-gray-600 font-light">SquadScrapbook</span>
         </div>
 
         {/* Hero section */}
         <div className="max-w-xl">
-          <h1 className="text-6xl font-light text-gray-700 mb-8 leading-tight">Capture your</h1>
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-light text-gray-700 mb-4 sm:mb-6 md:mb-8 leading-tight">Capture your</h1>
 
-          <p className="text-gray-600 text-lg mb-10 leading-relaxed">
+          <p className="text-gray-600 text-base sm:text-lg mb-6 sm:mb-8 md:mb-10 leading-relaxed">
             Collaborate to create a scrapbook of memories, showcase your group's unique story.
           </p>
 
           <button
-            className="bg-pink-400 text-white px-10 py-4 rounded-full text-lg font-light hover:bg-pink-500 transition-colors shadow-md"
+            className="bg-pink-400 text-white px-6 sm:px-8 md:px-10 py-3 sm:py-3.5 md:py-4 rounded-full text-base sm:text-lg font-light hover:bg-pink-500 transition-colors shadow-md w-full sm:w-auto"
             onClick={onStart}
           >
             Join now
