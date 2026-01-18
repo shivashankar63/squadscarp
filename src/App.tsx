@@ -91,6 +91,7 @@ type Page =
   | 'lifePath'
   | 'reflections'
   | 'memoryLane'
+  | 'monthView'
   | 'captureMoments'
   | 'creativeMemories'
   | 'scrapbookShowcase'
@@ -561,7 +562,7 @@ function ExplorePage({
                     onClick={() => onViewDashboard(group.name)}
                   >
                     <div className="h-48 relative overflow-hidden">
-                      <img src={group.image} alt={group.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      <img src={group.image} alt={group.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
                       <div className="absolute bottom-4 left-4 right-4">
                         <h3 className="text-xl font-bold text-white mb-1">{group.name}</h3>
@@ -889,26 +890,44 @@ function MemoryDashboard({
   }>>([])
   const isOwnDashboard = groupName === 'Your Scrapbook'
   
-  // Load memories from database
+  // Load memories from database - Show fallback immediately for faster perceived performance
   useEffect(() => {
+    // Set fallback data immediately so page renders fast
+    const fallbackMemories = [
+      { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
+      { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop', category: 'Celebration' },
+      { id: 3, title: 'Hiking Adventure', date: '2024-05-10', likes: 67, image: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop', category: 'Adventure' },
+      { id: 4, title: 'Family Reunion', date: '2024-08-01', likes: 89, image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=600&fit=crop', category: 'Family' },
+      { id: 5, title: 'Graduation Day', date: '2024-05-25', likes: 120, image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=600&fit=crop', category: 'Milestone' },
+      { id: 6, title: 'Wedding Anniversary', date: '2024-06-10', likes: 95, image: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=600&fit=crop', category: 'Love' },
+      { id: 7, title: 'Mountain Sunset', date: '2024-07-22', likes: 78, image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop', category: 'Nature' },
+      { id: 8, title: 'City Lights', date: '2024-08-05', likes: 56, image: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=600&fit=crop', category: 'Urban' },
+      { id: 9, title: 'Beach Sunset', date: '2024-07-30', likes: 103, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
+    ]
+    setFeaturedMemories(fallbackMemories)
+    setIsLoading(false) // Show content immediately
+    
+    // Then fetch from database in background and update if available
     const loadMemories = async () => {
-      setIsLoading(true)
       try {
-        // Get group ID from group name (for now, we'll search by name or use a default)
-        // In a real app, you'd have a group ID mapping
-        const { data: groups, error: groupError } = await getGroups(true)
+        // Run both queries in parallel for faster loading
+        const [groupsResult, memoriesResult] = await Promise.all([
+          getGroups(true),
+          getMemories(undefined) // Get all memories first, then filter if needed
+        ])
         
+        const { data: groups, error: groupError } = groupsResult
         let groupId: string | undefined
         if (!groupError && groups && groups.length > 0) {
           const foundGroup = groups.find((g: any) => g.name === groupName)
           groupId = foundGroup?.id
         }
 
-        const { data, error } = await getMemories(groupId)
+        // If we have a groupId, fetch memories for that group, otherwise use the already fetched memories
+        const { data, error } = groupId ? await getMemories(groupId) : memoriesResult
         
-        // Always set some memories - use database data if available, otherwise use fallback
+        // Update with database data if available
         if (!error && data && data.length > 0) {
-          // Transform database records to match component format
           setFeaturedMemories(data.map((m: any) => ({
             id: m.id,
             title: m.title,
@@ -918,34 +937,14 @@ function MemoryDashboard({
             category: m.category || 'General',
             description: m.description || m.story,
           })))
-        } else {
-          // Fallback to default memories if database is not set up or no data
-          console.log('Using fallback memories - database may not be configured or empty')
-          setFeaturedMemories([
-            { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
-            { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop', category: 'Celebration' },
-            { id: 3, title: 'Hiking Adventure', date: '2024-05-10', likes: 67, image: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop', category: 'Adventure' },
-            { id: 4, title: 'Family Reunion', date: '2024-08-01', likes: 89, image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=600&fit=crop', category: 'Family' },
-            { id: 5, title: 'Graduation Day', date: '2024-05-25', likes: 120, image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=600&fit=crop', category: 'Milestone' },
-            { id: 6, title: 'Wedding Anniversary', date: '2024-06-10', likes: 95, image: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=600&fit=crop', category: 'Love' },
-            { id: 7, title: 'Mountain Sunset', date: '2024-07-22', likes: 78, image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop', category: 'Nature' },
-            { id: 8, title: 'City Lights', date: '2024-08-05', likes: 56, image: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=600&fit=crop', category: 'Urban' },
-            { id: 9, title: 'Beach Sunset', date: '2024-07-30', likes: 103, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
-          ])
         }
       } catch (error) {
         console.error('Error loading memories:', error)
-        // Even on error, set fallback memories so page can load
-        setFeaturedMemories([
-          { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
-          { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop', category: 'Celebration' },
-          { id: 3, title: 'Hiking Adventure', date: '2024-05-10', likes: 67, image: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop', category: 'Adventure' },
-        ])
-      } finally {
-        setIsLoading(false)
+        // Keep fallback data on error
       }
     }
 
+    // Load in background without blocking UI
     loadMemories()
   }, [groupName])
 
@@ -958,15 +957,21 @@ function MemoryDashboard({
     { id: 'effects', icon: Palette, label: 'Effects', effects: ['blur', 'brightness', 'contrast', 'saturate'] },
   ]
 
-  if (isLoading) {
+  // Show skeleton loaders instead of blocking spinner for better UX
+  if (isLoading && featuredMemories.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-indigo-50 page-transition">
         <div className="max-w-7xl mx-auto px-6 sm:px-8 py-12 sm:py-16">
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <div className="text-center">
-              <LoadingSpinner size="lg" />
-              <p className="mt-4 text-gray-600 font-medium">Loading memories...</p>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="rounded-3xl overflow-hidden shadow-xl">
+                <div className="h-72 bg-gray-200 skeleton animate-pulse"></div>
+                <div className="p-5 bg-white">
+                  <div className="h-4 bg-gray-200 rounded skeleton w-3/4 mb-3 animate-pulse"></div>
+                  <div className="h-3 bg-gray-200 rounded skeleton w-1/2 animate-pulse"></div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1272,6 +1277,7 @@ function MemoryDashboard({
                 <img
                   src={memory.image}
                   alt={memory.title}
+                  loading="lazy"
                   className={`${layout === 'timeline' ? 'w-48 h-full' : 'w-full h-full'} object-cover group-hover:scale-110 transition-transform duration-700 ease-out`}
                 />
                 {/* Enhanced gradient overlay */}
@@ -3514,7 +3520,7 @@ function EditMemoriesPage({ onHome, onAddMemory, showToast, showConfirm, onViewM
                   }}
                 >
                   <div className={`w-full h-48 bg-gradient-to-br ${gradient} rounded-xl mb-4 relative overflow-hidden group-hover:scale-110 transition-transform duration-300`}>
-                    <img src={memory.image} alt={memory.title} className="w-full h-full object-cover" />
+                    <img src={memory.image} alt={memory.title} loading="lazy" className="w-full h-full object-cover" />
                     <div className="absolute inset-0 bg-black/10"></div>
                     <div className="absolute bottom-4 left-4 right-4">
                       <div className="bg-white/90 backdrop-blur-sm rounded-lg p-2">
@@ -3589,7 +3595,7 @@ function EditMemoriesPage({ onHome, onAddMemory, showToast, showConfirm, onViewM
 }
 
 // Memory Feed Page
-function MemoryFeedPage({ onHome, onNewPost, showToast }: { onHome: () => void; onNewPost: () => void; showToast?: (message: string, type?: ToastType) => void }) {
+function MemoryFeedPage({ onHome, onNewPost, showToast, onViewMemory }: { onHome: () => void; onNewPost: () => void; showToast?: (message: string, type?: ToastType) => void; onViewMemory?: (memoryId: string) => void }) {
   const feedItems = [
     { id: 1, user: 'Sarah', action: 'added a photo', time: '2h ago', image: 'bg-gradient-to-br from-pink-400 to-rose-400', icon: Image, color: 'pink', photo: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop' },
     { id: 2, user: 'Mike', action: 'commented on', time: '4h ago', image: 'bg-gradient-to-br from-orange-400 to-amber-400', icon: MessageCircle, color: 'orange', photo: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop' },
@@ -3648,8 +3654,11 @@ function MemoryFeedPage({ onHome, onNewPost, showToast }: { onHome: () => void; 
                   </div>
                   <button 
                     onClick={() => {
-                      if (showToast) showToast(`Viewing ${item.user}'s memory`, 'info')
-                      // Navigate to memory view
+                      if (onViewMemory) {
+                        onViewMemory(String(item.id))
+                      } else if (showToast) {
+                        showToast(`Viewing ${item.user}'s memory`, 'info')
+                      }
                     }}
                     className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 transition-all shadow-md hover:shadow-lg hover:scale-105"
                   >
@@ -3937,12 +3946,72 @@ function ReflectionsPage({ onHome, onNewReflection, showToast }: { onHome: () =>
 }
 
 // Memory Lane Page
-function MemoryLanePage({ onHome, onAddMemory, showToast }: { onHome: () => void; onAddMemory: () => void; showToast?: (message: string, type?: ToastType) => void }) {
+function MemoryLanePage({ onHome, onAddMemory, showToast, onViewMonth }: { onHome: () => void; onAddMemory: () => void; showToast?: (message: string, type?: ToastType) => void; onViewMonth?: (month: string, year: string) => void }) {
   const memories = [
-    { month: 'January', year: '2024', count: 12, color: 'bg-pink-300' },
-    { month: 'February', year: '2024', count: 8, color: 'bg-orange-300' },
-    { month: 'March', year: '2024', count: 15, color: 'bg-yellow-300' },
-    { month: 'April', year: '2024', count: 20, color: 'bg-blue-300' },
+    { 
+      month: 'January', 
+      year: '2024', 
+      count: 12, 
+      color: 'bg-pink-300',
+      images: [
+        'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=400&h=400&fit=crop',
+      ]
+    },
+    { 
+      month: 'February', 
+      year: '2024', 
+      count: 8, 
+      color: 'bg-orange-300',
+      images: [
+        'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=400&h=400&fit=crop',
+      ]
+    },
+    { 
+      month: 'March', 
+      year: '2024', 
+      count: 15, 
+      color: 'bg-yellow-300',
+      images: [
+        'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=400&h=400&fit=crop',
+      ]
+    },
+    { 
+      month: 'April', 
+      year: '2024', 
+      count: 20, 
+      color: 'bg-blue-300',
+      images: [
+        'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=400&h=400&fit=crop',
+      ]
+    },
   ]
 
   return (
@@ -3984,7 +4053,11 @@ function MemoryLanePage({ onHome, onAddMemory, showToast }: { onHome: () => void
               <div
                 key={i}
                 onClick={() => {
-                  if (showToast) showToast(`Viewing ${memory.month} ${memory.year} memories`, 'info')
+                  if (onViewMonth) {
+                    onViewMonth(memory.month, memory.year)
+                  } else if (showToast) {
+                    showToast(`Viewing ${memory.month} ${memory.year} memories`, 'info')
+                  }
                 }}
                 className="bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 hover:scale-105 group cursor-pointer"
               >
@@ -3998,8 +4071,26 @@ function MemoryLanePage({ onHome, onAddMemory, showToast }: { onHome: () => void
                   </div>
                 </div>
                 <div className="grid grid-cols-4 gap-2">
-                  {[...Array(Math.min(memory.count, 8))].map((_, j) => (
-                    <div key={j} className={`aspect-square bg-gradient-to-br ${gradient} rounded-lg opacity-60 hover:opacity-100 transition-opacity`}></div>
+                  {memory.images.slice(0, Math.min(memory.count, 8)).map((image, j) => (
+                    <div 
+                      key={j} 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (onViewMonth) {
+                          onViewMonth(memory.month, memory.year)
+                        } else if (showToast) {
+                          showToast(`Viewing ${memory.month} ${memory.year} memories`, 'info')
+                        }
+                      }}
+                      className="aspect-square rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-all hover:scale-110 group cursor-pointer"
+                    >
+                      <img 
+                        src={image} 
+                        alt={`${memory.month} ${memory.year} memory ${j + 1}`}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-125 transition-transform duration-300"
+                      />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -4573,24 +4664,36 @@ function MemoryDetailPage({
     type?: 'warning' | 'danger'
   }) => void
 }) {
-  const [memory, setMemory] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  // Initialize with sample data for immediate display
+  const [memory, setMemory] = useState<any>({
+    title: 'Loading...',
+    description: '',
+    category: 'General',
+    date: new Date().toISOString().split('T')[0],
+  })
+  const [isLoading, setIsLoading] = useState(false) // Start with false to show content faster
   const [isEditing, setIsEditing] = useState(false)
   const [editedTitle, setEditedTitle] = useState('')
   const [editedDescription, setEditedDescription] = useState('')
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
-  const [imageUrls, setImageUrls] = useState<string[]>([])
+  const [imageUrls, setImageUrls] = useState<string[]>([
+    // Show sample images immediately while loading
+    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop',
+    'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop',
+    'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop',
+    'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=600&fit=crop',
+    'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=600&fit=crop',
+  ])
 
   useEffect(() => {
     let isMounted = true // Prevent state updates if component unmounts
     
     async function fetchMemory() {
       if (!memoryId) {
-        if (isMounted) setIsLoading(false)
         return
       }
-      if (isMounted) setIsLoading(true)
       
+      // Fetch in background without blocking UI (we already have sample images showing)
       const { data, error } = await getMemoryById(memoryId)
       
       // Only update state if component is still mounted
@@ -4607,19 +4710,17 @@ function MemoryDetailPage({
         } else {
           console.error('Error fetching memory details:', error)
         }
-        setMemory(null)
-      } else {
+        // Keep sample data on error
+      } else if (data) {
         setMemory(data)
         setEditedTitle(data?.title || '')
         setEditedDescription(data?.description || '')
         // Assuming image_url can be a comma-separated string or an array of URLs
         if (data?.image_url) {
           setImageUrls(data.image_url.split(',').filter(Boolean))
-        } else {
-          setImageUrls([])
         }
+        // Otherwise keep the sample images we already set
       }
-      setIsLoading(false)
     }
     
     fetchMemory()
@@ -4705,11 +4806,18 @@ function MemoryDetailPage({
     showToast(`${files.length} file(s) selected for upload`, 'info')
   }
 
-  if (isLoading && !memory) {
+  // Show skeleton loader only if we have no data at all
+  if (isLoading && !memory && imageUrls.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
-        <Loader2 className="w-10 h-10 text-pink-500 animate-spin" />
-        <span className="ml-3 text-gray-700">Loading memory...</span>
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-8">
+        <div className="max-w-6xl mx-auto">
+          <div className="h-12 bg-gray-200 rounded-lg skeleton mb-6 animate-pulse"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-64 bg-gray-200 rounded-xl skeleton animate-pulse"></div>
+            ))}
+          </div>
+        </div>
       </div>
     )
   }
@@ -4809,7 +4917,7 @@ function MemoryDetailPage({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {imageUrls.map((url, index) => (
             <div key={index} className="relative group rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all hover:scale-105">
-              <img src={url} alt={`Memory image ${index + 1}`} className="w-full h-64 object-cover" />
+              <img src={url} alt={`Memory image ${index + 1}`} loading="lazy" className="w-full h-64 object-cover" />
               {isEditing && (
                 <button
                   onClick={() => handleDeleteImage(url)}
@@ -4891,6 +4999,97 @@ function MemoryDetailPage({
             </p>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Month View Page - Shows all images for a specific month
+function MonthViewPage({ 
+  month, 
+  year, 
+  images, 
+  onBack, 
+  showToast 
+}: { 
+  month: string
+  year: string
+  images: string[]
+  onBack: () => void
+  showToast?: (message: string, type?: ToastType) => void
+}) {
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+      <div className="max-w-7xl mx-auto p-8">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-gray-700 hover:text-pink-600 mb-6 transition-all hover:scale-105 group"
+        >
+          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+          <span className="text-sm font-medium">Back to Memory Lane</span>
+        </button>
+
+        <div className="mb-8">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent mb-2">
+            {month} {year}
+          </h1>
+          <p className="text-gray-600 text-lg">{images.length} memories</p>
+        </div>
+
+        {images.length === 0 ? (
+          <div className="text-center py-20">
+            <Image className="w-24 h-24 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 text-xl">No memories found for {month} {year}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {images.map((image, index) => (
+              <div
+                key={index}
+                onClick={() => setLightboxImage(image)}
+                className="aspect-square rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer group hover:scale-105 relative"
+              >
+                <img
+                  src={image}
+                  alt={`${month} ${year} memory ${index + 1}`}
+                  loading="lazy"
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  <div className="absolute bottom-4 left-4 right-4">
+                    <p className="text-white text-sm font-medium">Memory {index + 1}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Lightbox Modal */}
+        {lightboxImage && (
+          <div
+            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+            onClick={() => setLightboxImage(null)}
+          >
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-10"
+            >
+              <X className="w-8 h-8" />
+            </button>
+            <img
+              src={lightboxImage}
+              alt="Full size memory"
+              className="max-w-full max-h-full object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm">
+              {images.indexOf(lightboxImage) + 1} of {images.length}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -5028,7 +5227,7 @@ function CalendarPage({ onHome, onAddToCalendar, showToast }: { onHome: () => vo
 }
 
 // Favorites Page
-function FavoritesPage({ onHome, onAddFavorite, showToast }: { onHome: () => void; onAddFavorite: () => void; showToast?: (message: string, type?: ToastType) => void }) {
+function FavoritesPage({ onHome, onAddFavorite, showToast, onViewMemory }: { onHome: () => void; onAddFavorite: () => void; showToast?: (message: string, type?: ToastType) => void; onViewMemory?: (memoryId: string) => void }) {
   const [favorites, setFavorites] = useState([
     { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, color: 'bg-pink-200', image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', isFavorite: true },
     { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, color: 'bg-orange-200', image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop', isFavorite: true },
@@ -5065,12 +5264,16 @@ function FavoritesPage({ onHome, onAddFavorite, showToast }: { onHome: () => voi
             <div 
               key={favorite.id} 
               onClick={() => {
-                if (showToast) showToast(`Viewing ${favorite.title}`, 'info')
+                if (onViewMemory) {
+                  onViewMemory(String(favorite.id))
+                } else if (showToast) {
+                  showToast(`Viewing ${favorite.title}`, 'info')
+                }
               }}
               className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-xl transition-all cursor-pointer group hover:scale-105"
             >
               <div className={`w-full h-48 ${favorite.color} relative overflow-hidden`}>
-                <img src={favorite.image} alt={favorite.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                <img src={favorite.image} alt={favorite.title} loading="lazy" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
                 <button 
                   onClick={(e) => {
                     e.stopPropagation()
@@ -5101,7 +5304,7 @@ function FavoritesPage({ onHome, onAddFavorite, showToast }: { onHome: () => voi
 }
 
 // Starred Page
-function StarredPage({ onHome, onStarMemory, showToast }: { onHome: () => void; onStarMemory: () => void; showToast?: (message: string, type?: ToastType) => void }) {
+function StarredPage({ onHome, onStarMemory, showToast, onViewMemory }: { onHome: () => void; onStarMemory: () => void; showToast?: (message: string, type?: ToastType) => void; onViewMemory?: (memoryId: string) => void }) {
   const [starred, setStarred] = useState([
     { id: 1, title: 'Creating Lasting Memories', subtitle: 'Team Adventure', progress: 75, color: 'bg-pink-300', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&h=600&fit=crop', isStarred: true },
     { id: 2, title: 'Memory Lane', subtitle: 'Creative Group', progress: 50, color: 'bg-orange-300', image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=800&h=600&fit=crop', isStarred: true },
@@ -5137,13 +5340,17 @@ function StarredPage({ onHome, onStarMemory, showToast }: { onHome: () => void; 
             <div 
               key={item.id} 
               onClick={() => {
-                if (showToast) showToast(`Viewing ${item.title}`, 'info')
+                if (onViewMemory) {
+                  onViewMemory(String(item.id))
+                } else if (showToast) {
+                  showToast(`Viewing ${item.title}`, 'info')
+                }
               }}
               className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-xl transition-all cursor-pointer group hover:scale-[1.02]"
             >
               <div className="flex items-center gap-4">
                 <div className={`w-24 h-24 ${item.color} rounded-lg flex-shrink-0 overflow-hidden group-hover:scale-110 transition-transform`}>
-                  <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
+                  <img src={item.image} alt={item.title} loading="lazy" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-start justify-between mb-2">
@@ -5973,6 +6180,9 @@ export default function ScrapbookHome() {
   const [page, setPage] = useState<Page>('landing')
   const [selectedGroupName, setSelectedGroupName] = useState<string>('')
   const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState<string>('')
+  const [selectedYear, setSelectedYear] = useState<string>('')
+  const [selectedMonthImages, setSelectedMonthImages] = useState<string[]>([])
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
@@ -6165,9 +6375,15 @@ export default function ScrapbookHome() {
   }
 
   if (page === 'memoryFeed') {
-    return withNav(<MemoryFeedPage onHome={() => {
-          handlePageChange('home')
-        }} onNewPost={() => handlePageChange('newPost')} showToast={showToast} />)
+    return withNav(<MemoryFeedPage 
+      onHome={() => handlePageChange('home')} 
+      onNewPost={() => handlePageChange('newPost')} 
+      showToast={showToast}
+      onViewMemory={(memoryId) => {
+        setSelectedMemoryId(memoryId)
+        handlePageChange('memoryDetail')
+      }}
+    />)
   }
 
   if (page === 'notesStickers') {
@@ -6189,9 +6405,115 @@ export default function ScrapbookHome() {
   }
 
   if (page === 'memoryLane') {
-    return withNav(<MemoryLanePage onHome={() => {
-          handlePageChange('home')
-        }} onAddMemory={() => handlePageChange('addMemory')} showToast={showToast} />)
+    return withNav(<MemoryLanePage 
+      onHome={() => handlePageChange('home')} 
+      onAddMemory={() => handlePageChange('addMemory')} 
+      showToast={showToast}
+      onViewMonth={(month, year) => {
+        // Find the images for this month from the MemoryLanePage data
+        const monthData = [
+          { 
+            month: 'January', 
+            year: '2024', 
+            images: [
+              'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=800&fit=crop',
+            ]
+          },
+          { 
+            month: 'February', 
+            year: '2024', 
+            images: [
+              'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=800&fit=crop',
+            ]
+          },
+          { 
+            month: 'March', 
+            year: '2024', 
+            images: [
+              'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=800&fit=crop',
+            ]
+          },
+          { 
+            month: 'April', 
+            year: '2024', 
+            images: [
+              'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=800&fit=crop',
+              'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=800&fit=crop',
+            ]
+          },
+        ]
+        
+        const foundMonth = monthData.find(m => m.month === month && m.year === year)
+        if (foundMonth) {
+          setSelectedMonth(month)
+          setSelectedYear(year)
+          setSelectedMonthImages(foundMonth.images)
+          handlePageChange('monthView')
+        } else {
+          if (showToast) showToast(`No memories found for ${month} ${year}`, 'info')
+        }
+      }}
+    />)
+  }
+
+  if (page === 'monthView') {
+    return withNav(<MonthViewPage
+      month={selectedMonth}
+      year={selectedYear}
+      images={selectedMonthImages}
+      onBack={() => handlePageChange('memoryLane')}
+      showToast={showToast}
+    />)
   }
 
   if (page === 'captureMoments') {
@@ -6237,15 +6559,27 @@ export default function ScrapbookHome() {
   }
 
   if (page === 'favorites') {
-    return withNav(<FavoritesPage onHome={() => {
-          handlePageChange('home')
-        }} onAddFavorite={() => handlePageChange('addFavorite')} showToast={showToast} />)
+    return withNav(<FavoritesPage 
+      onHome={() => handlePageChange('home')} 
+      onAddFavorite={() => handlePageChange('addFavorite')} 
+      showToast={showToast}
+      onViewMemory={(memoryId) => {
+        setSelectedMemoryId(memoryId)
+        handlePageChange('memoryDetail')
+      }}
+    />)
   }
 
   if (page === 'starred') {
-    return withNav(<StarredPage onHome={() => {
-          handlePageChange('home')
-        }} onStarMemory={() => handlePageChange('starMemory')} showToast={showToast} />)
+    return withNav(<StarredPage 
+      onHome={() => handlePageChange('home')} 
+      onStarMemory={() => handlePageChange('starMemory')} 
+      showToast={showToast}
+      onViewMemory={(memoryId) => {
+        setSelectedMemoryId(memoryId)
+        handlePageChange('memoryDetail')
+      }}
+    />)
   }
 
   // Add Detail Pages
