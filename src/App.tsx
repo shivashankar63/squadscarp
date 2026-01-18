@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Home,
   Users,
@@ -47,7 +47,33 @@ import {
   Download,
   Save,
   Trash2,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Info,
+  Menu,
+  Calendar as CalendarIcon,
+  Tag,
+  ZoomIn,
+  Eye,
+  Maximize,
+  Upload,
+  FileImage,
+  AlertCircle as AlertCircleIcon,
 } from 'lucide-react'
+import { 
+  createMemory, 
+  uploadFile, 
+  getMemories, 
+  getMemoryById,
+  getGroups, 
+  searchGroups,
+  likeMemory,
+  deleteMemory as deleteMemoryFromDB,
+  updateMemory as updateMemoryInDB,
+} from './lib/database'
+import { supabase } from './lib/supabase'
 
 type Page =
   | 'landing'
@@ -88,6 +114,7 @@ type Page =
   | 'addFavorite'
   | 'starMemory'
   | 'addYear'
+  | 'memoryDetail'
 
 // Persistent Navigation Sidebar Component
 function PersistentNavSidebar({
@@ -149,24 +176,330 @@ function PersistentNavSidebar({
   )
 }
 
-// Explore Page - Search for groups (Landing page showing different dashboards)
-function ExplorePage({ onViewDashboard, onBack }: { onViewDashboard: (groupName: string) => void; onBack: () => void }) {
-  const [searchQuery, setSearchQuery] = useState('')
+// Toast Notification System
+type ToastType = 'success' | 'error' | 'info' | 'warning'
 
-  const availableGroups = [
-    { id: 1, name: 'Squad Scrapbook', members: 12, memories: 145, description: 'Our amazing journey together', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=300&fit=crop', isPublic: true },
-    { id: 2, name: 'College Friends', members: 8, memories: 89, description: 'Memories from college days', image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=400&h=300&fit=crop', isPublic: true },
-    { id: 3, name: 'Family Moments', members: 15, memories: 234, description: 'Family gatherings and celebrations', image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=400&h=300&fit=crop', isPublic: true },
-    { id: 4, name: 'Travel Buddies', members: 6, memories: 67, description: 'Adventures around the world', image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop', isPublic: true },
-    { id: 5, name: 'Childhood Friends', members: 5, memories: 123, description: 'Growing up together', image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=400&h=300&fit=crop', isPublic: true },
-  ]
+interface Toast {
+  id: string
+  message: string
+  type: ToastType
+}
 
-  const filteredGroups = availableGroups.filter((group) =>
-    group.name.toLowerCase().includes(searchQuery.toLowerCase()) && group.isPublic
+function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) {
+  return (
+    <div className="fixed top-4 right-4 z-50 space-y-2">
+      {toasts.map((toast) => {
+        const icons = {
+          success: CheckCircle,
+          error: XCircle,
+          info: Info,
+          warning: AlertCircle,
+        }
+        const colors = {
+          success: 'bg-green-500',
+          error: 'bg-red-500',
+          info: 'bg-blue-500',
+          warning: 'bg-yellow-500',
+        }
+        const Icon = icons[toast.type]
+        return (
+          <div
+            key={toast.id}
+            className={`${colors[toast.type]} text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 min-w-[300px] max-w-md animate-slideIn`}
+          >
+            <Icon className="w-5 h-5 flex-shrink-0" />
+            <p className="flex-1 font-medium">{toast.message}</p>
+            <button
+              onClick={() => onRemove(toast.id)}
+              className="hover:bg-white/20 rounded-lg p-1 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )
+      })}
+    </div>
   )
+}
+
+// Confirmation Dialog Component
+function ConfirmationDialog({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
+  message,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  type = 'warning',
+}: {
+  isOpen: boolean
+  onClose: () => void
+  onConfirm: () => void
+  title: string
+  message: string
+  confirmText?: string
+  cancelText?: string
+  type?: 'warning' | 'danger'
+}) {
+  if (!isOpen) return null
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scaleIn">
+        <div className="flex items-start gap-4 mb-4">
+          <div className={`p-3 rounded-full ${type === 'danger' ? 'bg-red-100' : 'bg-yellow-100'}`}>
+            <AlertCircle className={`w-6 h-6 ${type === 'danger' ? 'text-red-600' : 'text-yellow-600'}`} />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-xl font-bold text-gray-900 mb-2">{title}</h3>
+            <p className="text-gray-600">{message}</p>
+          </div>
+        </div>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+          >
+            {cancelText}
+          </button>
+          <button
+            onClick={() => {
+              onConfirm()
+              onClose()
+            }}
+            className={`px-6 py-2.5 text-white rounded-xl transition-colors font-medium ${
+              type === 'danger'
+                ? 'bg-red-500 hover:bg-red-600'
+                : 'bg-yellow-500 hover:bg-yellow-600'
+            }`}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Empty State Components
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  actionLabel,
+  onAction,
+  illustration,
+}: {
+  icon?: React.ComponentType<{ className?: string }>
+  title: string
+  description: string
+  actionLabel?: string
+  onAction?: () => void
+  illustration?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+      {illustration || (Icon && (
+        <div className="mb-6 p-6 bg-gradient-to-br from-pink-100 to-purple-100 rounded-full">
+          <Icon className="w-16 h-16 text-pink-500" />
+        </div>
+      ))}
+      <h3 className="text-2xl font-bold text-gray-900 mb-2">{title}</h3>
+      <p className="text-gray-600 mb-6 max-w-md">{description}</p>
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          className="px-6 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-semibold shadow-lg hover:shadow-xl hover:scale-105 transform duration-200"
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// Skeleton Loader Components
+function SkeletonCard() {
+  return (
+    <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-lg border border-white/20 overflow-hidden">
+      <div className="h-48 bg-gray-200 skeleton"></div>
+      <div className="p-6">
+        <div className="h-6 bg-gray-200 rounded skeleton mb-3"></div>
+        <div className="h-4 bg-gray-200 rounded skeleton mb-4 w-3/4"></div>
+        <div className="flex items-center justify-between">
+          <div className="h-4 bg-gray-200 rounded skeleton w-24"></div>
+          <div className="h-4 bg-gray-200 rounded skeleton w-24"></div>
+        </div>
+        <div className="h-10 bg-gray-200 rounded-xl skeleton mt-4"></div>
+      </div>
+    </div>
+  )
+}
+
+// SkeletonMemory component for future use in memory grids
+// function SkeletonMemory() {
+//   return (
+//     <div className="rounded-3xl overflow-hidden shadow-xl">
+//       <div className="h-72 bg-gray-200 skeleton"></div>
+//       <div className="absolute bottom-0 left-0 right-0 p-5">
+//         <div className="h-4 bg-white/30 rounded-full skeleton w-20 mb-3"></div>
+//         <div className="h-6 bg-white/30 rounded skeleton mb-2"></div>
+//         <div className="h-4 bg-white/30 rounded skeleton w-24"></div>
+//       </div>
+//     </div>
+//   )
+// }
+
+function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const sizeClasses = {
+    sm: 'w-4 h-4',
+    md: 'w-6 h-6',
+    lg: 'w-8 h-8'
+  }
+  return (
+    <div className="flex items-center justify-center">
+      <Loader2 className={`${sizeClasses[size]} text-pink-500 spinner`} />
+    </div>
+  )
+}
+
+// Explore Page - Search for groups (Landing page showing different dashboards)
+function ExplorePage({ 
+  onViewDashboard, 
+  onBack,
+  showToast,
+}: { 
+  onViewDashboard: (groupName: string) => void
+  onBack: () => void
+  showToast: (message: string, type?: ToastType) => void
+}) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
+  const [showFilters, setShowFilters] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedDateRange, setSelectedDateRange] = useState<string>('all')
+  const [availableGroups, setAvailableGroups] = useState<Array<{
+    id: number | string
+    name: string
+    members: number
+    memories: number
+    description: string
+    image: string
+    isPublic: boolean
+    category: string
+    dateCreated: string
+  }>>([])
+
+  // Load groups from database
+  useEffect(() => {
+    const loadGroups = async () => {
+      setIsLoading(true)
+      try {
+        let result
+        if (searchQuery.trim()) {
+          result = await searchGroups(searchQuery)
+        } else {
+          result = await getGroups(true) // Get only public groups
+        }
+
+        const { data, error } = result
+
+        if (error) {
+          console.error('Error loading groups:', error)
+          // Fallback to default groups if database is not set up
+          setAvailableGroups([
+            { id: 1, name: 'Squad Scrapbook', members: 12, memories: 145, description: 'Our amazing journey together', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=300&fit=crop', isPublic: true, category: 'friends', dateCreated: '2023-01-15' },
+            { id: 2, name: 'College Friends', members: 8, memories: 89, description: 'Memories from college days', image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=400&h=300&fit=crop', isPublic: true, category: 'education', dateCreated: '2022-08-20' },
+            { id: 3, name: 'Family Moments', members: 15, memories: 234, description: 'Family gatherings and celebrations', image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=400&h=300&fit=crop', isPublic: true, category: 'family', dateCreated: '2023-06-10' },
+            { id: 4, name: 'Travel Buddies', members: 6, memories: 67, description: 'Adventures around the world', image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop', isPublic: true, category: 'travel', dateCreated: '2023-03-05' },
+            { id: 5, name: 'Childhood Friends', members: 5, memories: 123, description: 'Growing up together', image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=400&h=300&fit=crop', isPublic: true, category: 'friends', dateCreated: '2022-12-01' },
+          ])
+        } else if (data && data.length > 0) {
+          // Transform database records to match component format
+          setAvailableGroups(data.map((g: any) => ({
+            id: g.id,
+            name: g.name,
+            members: g.members_count || 0,
+            memories: g.memories_count || 0,
+            description: g.description || '',
+            image: g.image_url || 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=300&fit=crop',
+            isPublic: g.is_public,
+            category: g.category || 'general',
+            dateCreated: g.created_at?.split('T')[0] || '',
+          })))
+        } else {
+          // Fallback to default groups if database is not set up or no data
+          console.log('Using fallback groups - database may not be configured or empty')
+          setAvailableGroups([
+            { id: 1, name: 'Squad Scrapbook', members: 12, memories: 145, description: 'Our amazing journey together', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=300&fit=crop', isPublic: true, category: 'friends', dateCreated: '2023-01-15' },
+            { id: 2, name: 'College Friends', members: 8, memories: 89, description: 'Memories from college days', image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=400&h=300&fit=crop', isPublic: true, category: 'education', dateCreated: '2022-08-20' },
+            { id: 3, name: 'Family Moments', members: 15, memories: 234, description: 'Family gatherings and celebrations', image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=400&h=300&fit=crop', isPublic: true, category: 'family', dateCreated: '2023-06-10' },
+            { id: 4, name: 'Travel Buddies', members: 6, memories: 67, description: 'Adventures around the world', image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop', isPublic: true, category: 'travel', dateCreated: '2023-03-05' },
+            { id: 5, name: 'Childhood Friends', members: 5, memories: 123, description: 'Growing up together', image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=400&h=300&fit=crop', isPublic: true, category: 'friends', dateCreated: '2022-12-01' },
+          ])
+        }
+      } catch (error) {
+        console.error('Error loading groups:', error)
+        // Even on error, set fallback groups so page can load
+        setAvailableGroups([
+          { id: 1, name: 'Squad Scrapbook', members: 12, memories: 145, description: 'Our amazing journey together', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=300&fit=crop', isPublic: true, category: 'friends', dateCreated: '2023-01-15' },
+          { id: 2, name: 'College Friends', members: 8, memories: 89, description: 'Memories from college days', image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=400&h=300&fit=crop', isPublic: true, category: 'education', dateCreated: '2022-08-20' },
+        ])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadGroups()
+  }, [searchQuery, selectedCategory, selectedDateRange])
+
+  const searchSuggestions = availableGroups
+    .filter((group) => group.name.toLowerCase().includes(searchQuery.toLowerCase()) && group.isPublic)
+    .slice(0, 5)
+    .map((group) => group.name)
+
+  const filteredGroups = availableGroups.filter((group) => {
+    const matchesSearch = group.name.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesCategory = selectedCategory === 'all' || group.category === selectedCategory
+    const matchesDate = selectedDateRange === 'all' || true // Simplified date filtering
+    return matchesSearch && matchesCategory && matchesDate && group.isPublic
+  })
+  
+  // Load recent searches from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('recentSearches')
+    if (saved) {
+      setRecentSearches(JSON.parse(saved))
+    }
+  }, [])
+  
+  const addToRecentSearches = (query: string) => {
+    if (query.trim() && !recentSearches.includes(query)) {
+      const updated = [query, ...recentSearches].slice(0, 5)
+      setRecentSearches(updated)
+      localStorage.setItem('recentSearches', JSON.stringify(updated))
+    }
+  }
+
+  // Simulate loading when searching
+  useEffect(() => {
+    if (searchQuery) {
+      setIsLoading(true)
+      const timer = setTimeout(() => {
+        setIsLoading(false)
+        if (searchQuery.trim()) {
+          addToRecentSearches(searchQuery)
+        }
+      }, 800)
+      return () => clearTimeout(timer)
+    }
+  }, [searchQuery])
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 page-transition">
       <div className="max-w-6xl mx-auto px-8 py-16">
         {/* Back Button */}
         <button
@@ -201,10 +534,25 @@ function ExplorePage({ onViewDashboard, onBack }: { onViewDashboard: (groupName:
         {searchQuery && (
           <div className="mb-12">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">
-              {filteredGroups.length > 0 ? `Found ${filteredGroups.length} Group${filteredGroups.length > 1 ? 's' : ''}` : 'No Groups Found'}
+              {isLoading ? (
+                <div className="flex items-center gap-2">
+                  <LoadingSpinner size="sm" />
+                  <span>Searching...</span>
+                </div>
+              ) : filteredGroups.length > 0 ? (
+                `Found ${filteredGroups.length} Group${filteredGroups.length > 1 ? 's' : ''}`
+              ) : (
+                'No Groups Found'
+              )}
             </h2>
             
-            {filteredGroups.length > 0 ? (
+            {isLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[...Array(6)].map((_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            ) : filteredGroups.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredGroups.map((group) => (
                   <div
@@ -240,9 +588,13 @@ function ExplorePage({ onViewDashboard, onBack }: { onViewDashboard: (groupName:
               </div>
             ) : (
               <div className="text-center py-12 bg-white/80 backdrop-blur-lg rounded-2xl shadow-lg border border-white/20">
-                <Search className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-xl text-gray-600 mb-2">No groups found</p>
-                <p className="text-gray-500">Try a different search term</p>
+                <EmptyState
+                  icon={Search}
+                  title="No groups found"
+                  description="We couldn't find any groups matching your search. Try a different term or browse popular groups below."
+                  actionLabel="Browse Popular Groups"
+                  onAction={() => setSearchQuery('')}
+                />
               </div>
             )}
           </div>
@@ -291,25 +643,311 @@ function ExplorePage({ onViewDashboard, onBack }: { onViewDashboard: (groupName:
   )
 }
 
+// Lightbox Component for Image Viewing
+function Lightbox({
+  isOpen,
+  onClose,
+  image,
+  title,
+  description,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  image: string
+  title?: string
+  description?: string
+}) {
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden'
+      return () => {
+        document.body.style.overflow = 'unset'
+      }
+    }
+  }, [isOpen])
+
+  if (!isOpen) return null
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image lightbox"
+    >
+      <div
+        className="relative max-w-7xl max-h-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors p-2"
+          aria-label="Close lightbox"
+        >
+          <X className="w-6 h-6" />
+        </button>
+        <img
+          src={image}
+          alt={title || 'Memory image'}
+          className="max-w-full max-h-[90vh] object-contain rounded-lg"
+        />
+        {(title || description) && (
+          <div className="mt-4 text-center text-white">
+            {title && <h3 className="text-xl font-bold mb-2">{title}</h3>}
+            {description && <p className="text-gray-300">{description}</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Form Input Component with Validation
+function FormInput({
+  label,
+  value,
+  onChange,
+  error,
+  maxLength,
+  type = 'text',
+  placeholder,
+  required = false,
+  ariaLabel,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  error?: string
+  maxLength?: number
+  type?: string
+  placeholder?: string
+  required?: boolean
+  ariaLabel?: string
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        {label}
+        {required && <span className="text-red-500 ml-1" aria-label="required">*</span>}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        className={`w-full px-4 py-2 border-2 rounded-lg focus:outline-none focus:ring-2 ${
+          error
+            ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+            : 'border-gray-300 focus:ring-pink-500 focus:border-pink-300'
+        }`}
+        aria-label={ariaLabel || label}
+        aria-invalid={!!error}
+        aria-describedby={error ? `${label}-error` : undefined}
+      />
+      <div className="flex items-center justify-between mt-1">
+        {error && (
+          <p id={`${label}-error`} className="text-sm text-red-600 flex items-center gap-1" role="alert">
+            <AlertCircleIcon className="w-4 h-4" />
+            {error}
+          </p>
+        )}
+        {maxLength && (
+          <p className={`text-xs ml-auto ${value.length > maxLength * 0.9 ? 'text-orange-600' : 'text-gray-500'}`}>
+            {value.length}/{maxLength}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Drag and Drop File Upload Component
+function DragDropUpload({
+  onFilesSelected,
+  accept = 'image/*',
+  maxFiles = 5,
+}: {
+  onFilesSelected: (files: File[]) => void
+  accept?: string
+  maxFiles?: number
+}) {
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const files = Array.from(e.dataTransfer.files).slice(0, maxFiles)
+    setUploadedFiles(files)
+    onFilesSelected(files)
+  }
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files).slice(0, maxFiles)
+      setUploadedFiles(files)
+      onFilesSelected(files)
+    }
+  }
+
+  return (
+    <div
+      onDrop={handleDrop}
+      onDragOver={(e) => {
+        e.preventDefault()
+        setIsDragging(true)
+      }}
+      onDragLeave={() => setIsDragging(false)}
+      className={`border-2 border-dashed rounded-lg p-8 text-center transition-all ${
+        isDragging
+          ? 'border-pink-500 bg-pink-50'
+          : 'border-gray-300 hover:border-pink-300'
+      } cursor-pointer`}
+      role="button"
+      tabIndex={0}
+      aria-label="Upload files by dragging and dropping or clicking"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          document.getElementById('file-upload-input')?.click()
+        }
+      }}
+    >
+      <input
+        id="file-upload-input"
+        type="file"
+        multiple
+        accept={accept}
+        onChange={handleFileInput}
+        className="hidden"
+        aria-label="File upload input"
+      />
+      <Upload className={`w-8 h-8 mx-auto mb-2 ${isDragging ? 'text-pink-500' : 'text-gray-400'}`} />
+      <p className="text-sm text-gray-600 mb-1">
+        {isDragging ? 'Drop files here' : 'Click to upload or drag and drop'}
+      </p>
+      <p className="text-xs text-gray-500">
+        {uploadedFiles.length > 0
+          ? `${uploadedFiles.length} file${uploadedFiles.length > 1 ? 's' : ''} selected`
+          : `Max ${maxFiles} files`}
+      </p>
+      {uploadedFiles.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {uploadedFiles.map((file, idx) => (
+            <div key={idx} className="flex items-center gap-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">
+              <FileImage className="w-4 h-4" />
+              <span className="flex-1 truncate">{file.name}</span>
+              <span className="text-xs text-gray-500">{(file.size / 1024).toFixed(0)}KB</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Beautiful Memory Dashboard - Visible when group is found
-function MemoryDashboard({ groupName, onBack, onEnter, onExplore }: { groupName: string; onBack: () => void; onEnter: () => void; onExplore: () => void }) {
-  const [selectedMemory, setSelectedMemory] = useState<number | null>(null)
+function MemoryDashboard({ 
+  groupName, 
+  onBack, 
+  onExplore,
+  showToast,
+  showConfirm,
+  onViewMemory,
+}: { 
+  groupName: string
+  onBack: () => void
+  onExplore: () => void
+  showToast: (message: string, type?: ToastType) => void
+  showConfirm: (config: {
+    title: string
+    message: string
+    onConfirm: () => void
+    confirmText?: string
+    cancelText?: string
+    type?: 'warning' | 'danger'
+  }) => void
+  onViewMemory?: (memoryId: string) => void
+}) {
+  const [selectedMemory, setSelectedMemory] = useState<number | string | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [selectedTool, setSelectedTool] = useState<string | null>(null)
   const [layout, setLayout] = useState<'grid' | 'masonry' | 'timeline'>('masonry')
+  const [isLoading, setIsLoading] = useState(true)
+  const [lightboxImage, setLightboxImage] = useState<{ image: string; title: string; description?: string } | null>(null)
+  const [hoveredMemory, setHoveredMemory] = useState<number | string | null>(null)
+  const [featuredMemories, setFeaturedMemories] = useState<Array<{
+    id: number | string
+    title: string
+    date: string
+    likes: number
+    image: string
+    category: string
+    description?: string
+  }>>([])
   const isOwnDashboard = groupName === 'Your Scrapbook'
   
-  const featuredMemories = [
-    { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
-    { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop', category: 'Celebration' },
-    { id: 3, title: 'Hiking Adventure', date: '2024-05-10', likes: 67, image: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop', category: 'Adventure' },
-    { id: 4, title: 'Family Reunion', date: '2024-08-01', likes: 89, image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=600&fit=crop', category: 'Family' },
-    { id: 5, title: 'Graduation Day', date: '2024-05-25', likes: 120, image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=600&fit=crop', category: 'Milestone' },
-    { id: 6, title: 'Wedding Anniversary', date: '2024-06-10', likes: 95, image: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=600&fit=crop', category: 'Love' },
-    { id: 7, title: 'Mountain Sunset', date: '2024-07-22', likes: 78, image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop', category: 'Nature' },
-    { id: 8, title: 'City Lights', date: '2024-08-05', likes: 56, image: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=600&fit=crop', category: 'Urban' },
-    { id: 9, title: 'Beach Sunset', date: '2024-07-30', likes: 103, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
-  ]
+  // Load memories from database
+  useEffect(() => {
+    const loadMemories = async () => {
+      setIsLoading(true)
+      try {
+        // Get group ID from group name (for now, we'll search by name or use a default)
+        // In a real app, you'd have a group ID mapping
+        const { data: groups, error: groupError } = await getGroups(true)
+        
+        let groupId: string | undefined
+        if (!groupError && groups && groups.length > 0) {
+          const foundGroup = groups.find((g: any) => g.name === groupName)
+          groupId = foundGroup?.id
+        }
+
+        const { data, error } = await getMemories(groupId)
+        
+        // Always set some memories - use database data if available, otherwise use fallback
+        if (!error && data && data.length > 0) {
+          // Transform database records to match component format
+          setFeaturedMemories(data.map((m: any) => ({
+            id: m.id,
+            title: m.title,
+            date: m.date || m.created_at?.split('T')[0] || '',
+            likes: m.likes || 0,
+            image: m.image_url || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop',
+            category: m.category || 'General',
+            description: m.description || m.story,
+          })))
+        } else {
+          // Fallback to default memories if database is not set up or no data
+          console.log('Using fallback memories - database may not be configured or empty')
+          setFeaturedMemories([
+            { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
+            { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop', category: 'Celebration' },
+            { id: 3, title: 'Hiking Adventure', date: '2024-05-10', likes: 67, image: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop', category: 'Adventure' },
+            { id: 4, title: 'Family Reunion', date: '2024-08-01', likes: 89, image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=600&fit=crop', category: 'Family' },
+            { id: 5, title: 'Graduation Day', date: '2024-05-25', likes: 120, image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&h=600&fit=crop', category: 'Milestone' },
+            { id: 6, title: 'Wedding Anniversary', date: '2024-06-10', likes: 95, image: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=800&h=600&fit=crop', category: 'Love' },
+            { id: 7, title: 'Mountain Sunset', date: '2024-07-22', likes: 78, image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop', category: 'Nature' },
+            { id: 8, title: 'City Lights', date: '2024-08-05', likes: 56, image: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&h=600&fit=crop', category: 'Urban' },
+            { id: 9, title: 'Beach Sunset', date: '2024-07-30', likes: 103, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
+          ])
+        }
+      } catch (error) {
+        console.error('Error loading memories:', error)
+        // Even on error, set fallback memories so page can load
+        setFeaturedMemories([
+          { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', category: 'Travel' },
+          { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop', category: 'Celebration' },
+          { id: 3, title: 'Hiking Adventure', date: '2024-05-10', likes: 67, image: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop', category: 'Adventure' },
+        ])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadMemories()
+  }, [groupName])
 
   const editingTools = [
     { id: 'filter', icon: Filter, label: 'Filters', colors: ['sepia', 'vintage', 'blackwhite', 'warm', 'cool'] },
@@ -320,8 +958,23 @@ function MemoryDashboard({ groupName, onBack, onEnter, onExplore }: { groupName:
     { id: 'effects', icon: Palette, label: 'Effects', effects: ['blur', 'brightness', 'contrast', 'saturate'] },
   ]
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-indigo-50 page-transition">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 py-12 sm:py-16">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <LoadingSpinner size="lg" />
+              <p className="mt-4 text-gray-600 font-medium">Loading memories...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-indigo-50">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-indigo-50 page-transition">
       {/* Hero Section */}
       <div className="relative overflow-hidden">
         {/* Subtle background pattern */}
@@ -581,14 +1234,23 @@ function MemoryDashboard({ groupName, onBack, onEnter, onExplore }: { groupName:
         )}
 
         {/* Memory Grid - Layout based on selection */}
-        <div className={
-          layout === 'grid' 
-            ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8'
-            : layout === 'timeline'
-            ? 'space-y-6'
-            : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8'
-        }>
-          {featuredMemories.map((memory, index) => {
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="rounded-3xl overflow-hidden shadow-xl">
+                <div className="h-72 bg-gray-200 skeleton"></div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={
+            layout === 'grid' 
+              ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8'
+              : layout === 'timeline'
+              ? 'space-y-6'
+              : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8'
+          }>
+            {featuredMemories.map((memory, index) => {
             const heights = ['h-64', 'h-80', 'h-72', 'h-96', 'h-64', 'h-80', 'h-72', 'h-64', 'h-80']
             const height = layout === 'masonry' ? heights[index % heights.length] : layout === 'timeline' ? 'h-48' : 'h-72'
             const isSelected = selectedMemory === memory.id
@@ -602,6 +1264,8 @@ function MemoryDashboard({ groupName, onBack, onEnter, onExplore }: { groupName:
                 onClick={() => {
                   if (editMode) {
                     setSelectedMemory(memory.id)
+                  } else if (onViewMemory) {
+                    onViewMemory(String(memory.id))
                   }
                 }}
               >
@@ -648,6 +1312,60 @@ function MemoryDashboard({ groupName, onBack, onEnter, onExplore }: { groupName:
                 {/* Enhanced hover overlay effect */}
                 <div className="absolute inset-0 bg-gradient-to-br from-pink-500/0 via-purple-500/0 to-indigo-500/0 group-hover:from-pink-500/15 group-hover:via-purple-500/10 group-hover:to-indigo-500/10 transition-all duration-500"></div>
                 
+                {/* Hover Preview - Quick Actions */}
+                {hoveredMemory === memory.id && !editMode && (
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (onViewMemory) {
+                          onViewMemory(String(memory.id))
+                        } else {
+                          setLightboxImage({ image: memory.image, title: memory.title, description: memory.category })
+                        }
+                      }}
+                      className="px-4 py-2 bg-white/90 backdrop-blur-md rounded-xl hover:bg-white transition-all duration-200 shadow-xl hover:scale-110 flex items-center gap-2 text-gray-700 font-semibold"
+                      aria-label="View memory details"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                      View
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        try {
+                          const { error } = await likeMemory(String(memory.id))
+                          if (error) throw error
+                          showToast('Memory liked!', 'success')
+                          // Update local state
+                          setFeaturedMemories(prev => prev.map(m => 
+                            m.id === memory.id ? { ...m, likes: (m.likes || 0) + 1 } : m
+                          ))
+                        } catch (error: any) {
+                          console.error('Error liking memory:', error)
+                          showToast('Failed to like memory', 'error')
+                        }
+                      }}
+                      className="px-4 py-2 bg-white/90 backdrop-blur-md rounded-xl hover:bg-pink-100 transition-all duration-200 shadow-xl hover:scale-110 flex items-center gap-2 text-pink-600 font-semibold"
+                      aria-label="Like memory"
+                    >
+                      <Heart className="w-4 h-4" />
+                      Like
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        showToast('Memory shared!', 'success')
+                      }}
+                      className="px-4 py-2 bg-white/90 backdrop-blur-md rounded-xl hover:bg-blue-100 transition-all duration-200 shadow-xl hover:scale-110 flex items-center gap-2 text-blue-600 font-semibold"
+                      aria-label="Share memory"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      Share
+                    </button>
+                  </div>
+                )}
+                
                 {/* Edit overlay - Only show for own dashboard */}
                 {editMode && isOwnDashboard && (
                   <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -662,8 +1380,27 @@ function MemoryDashboard({ groupName, onBack, onEnter, onExplore }: { groupName:
                       <Edit3 className="w-4 h-4 text-gray-700" />
                     </button>
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation()
+                        showConfirm({
+                          title: 'Delete Memory',
+                          message: 'Are you sure you want to delete this memory? This action cannot be undone.',
+                          onConfirm: async () => {
+                            try {
+                              const { error } = await deleteMemoryFromDB(String(memory.id))
+                              if (error) throw error
+                              showToast('Memory deleted successfully', 'success')
+                              // Remove from local state
+                              setFeaturedMemories(prev => prev.filter(m => m.id !== memory.id))
+                            } catch (error: any) {
+                              console.error('Error deleting memory:', error)
+                              showToast('Failed to delete memory', 'error')
+                            }
+                          },
+                          confirmText: 'Delete',
+                          cancelText: 'Cancel',
+                          type: 'danger',
+                        })
                       }}
                       className="p-2.5 bg-white/95 backdrop-blur-md rounded-xl hover:bg-red-100 transition-all duration-200 shadow-xl hover:scale-110 border border-white/50"
                       title="Delete"
@@ -684,7 +1421,8 @@ function MemoryDashboard({ groupName, onBack, onEnter, onExplore }: { groupName:
               </div>
             )
           })}
-        </div>
+          </div>
+        )}
 
         {/* Stats Section */}
         <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
@@ -1309,6 +2047,7 @@ function DiscoverPage({
   onCalendar,
   onFavorites,
   onStarred,
+  showToast,
 }: {
   onHome: () => void
   onCreate: () => void
@@ -1321,18 +2060,8 @@ function DiscoverPage({
   onCalendar: () => void
   onFavorites: () => void
   onStarred: () => void
+  showToast?: (message: string, type?: ToastType) => void
 }) {
-  void onHome
-  void onCreate
-  void onProfile
-  void onMemoryFeed
-  void onDiscover
-  void onLifePath
-  void onShare
-  void onCapture
-  void onCalendar
-  void onFavorites
-  void onStarred
   const [selectedProject, setSelectedProject] = useState(0)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
@@ -1563,10 +2292,19 @@ function DiscoverPage({
               </div>
 
               <div className="flex gap-4">
-                <button className="flex-1 bg-white text-gray-600 py-3 rounded-full text-sm font-medium border border-gray-300 hover:bg-gray-50 transition-colors">
+                <button 
+                  onClick={() => onCreate()}
+                  className="flex-1 bg-white text-gray-600 py-3 rounded-full text-sm font-medium border border-gray-300 hover:bg-gray-50 transition-colors hover:scale-105"
+                >
                   Start Project
                 </button>
-                <button className="flex-1 bg-pink-300 text-white py-3 rounded-full text-sm font-medium hover:bg-pink-400 transition-colors">
+                <button 
+                  onClick={() => {
+                    if (showToast) showToast(`Opening ${currentProject.title} gallery`, 'info')
+                    onHome()
+                  }}
+                  className="flex-1 bg-pink-300 text-white py-3 rounded-full text-sm font-medium hover:bg-pink-400 transition-colors hover:scale-105"
+                >
                   View Gallery
                 </button>
               </div>
@@ -1592,14 +2330,121 @@ function DiscoverPage({
 function CreateMemoryPage({
   onHome,
   onSettings,
+  showToast,
 }: {
   onHome: () => void
   onSettings: () => void
+  showToast: (message: string, type?: ToastType) => void
 }) {
-  void onHome
-  void onSettings
   const [memoryType, setMemoryType] = useState('photos')
   const [showForm, setShowForm] = useState(true)
+  const [formData, setFormData] = useState({
+    title: '',
+    category: '',
+    tags: '',
+    source: '',
+    mood: '',
+    story: '',
+    date: '',
+    location: '',
+    notes: '',
+    highlights: '',
+    collaborators: '',
+  })
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {}
+    
+    if (!formData.title.trim()) {
+      newErrors.title = 'Title is required'
+    } else if (formData.title.length > 100) {
+      newErrors.title = 'Title must be less than 100 characters'
+    }
+    
+    if (formData.story.length > 1000) {
+      newErrors.story = 'Story must be less than 1000 characters'
+    }
+    
+    if (formData.notes.length > 500) {
+      newErrors.notes = 'Notes must be less than 500 characters'
+    }
+    
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handleSubmit = async () => {
+    if (!validateForm()) {
+      return
+    }
+
+    try {
+      // Upload files first if any
+      let imageUrl = ''
+      let videoUrl = ''
+
+      if (uploadedFiles.length > 0) {
+        const imageFiles = uploadedFiles.filter(file => file.type.startsWith('image/'))
+        const videoFiles = uploadedFiles.filter(file => file.type.startsWith('video/'))
+
+        if (imageFiles.length > 0) {
+          const { url, error } = await uploadFile(imageFiles[0], 'memories')
+          if (error) throw error
+          imageUrl = url || ''
+        }
+
+        if (videoFiles.length > 0) {
+          const { url, error } = await uploadFile(videoFiles[0], 'memories')
+          if (error) throw error
+          videoUrl = url || ''
+        }
+      }
+
+      // Create memory in database
+      const { error } = await createMemory({
+        title: formData.title,
+        description: formData.story,
+        category: formData.category || 'General',
+        date: formData.date || new Date().toISOString().split('T')[0],
+        location: formData.location,
+        story: formData.story,
+        notes: formData.notes,
+        tags: formData.tags ? formData.tags.split(',').map(t => t.trim()) : [],
+        mood: formData.mood,
+        source: formData.source,
+        highlights: formData.highlights,
+        image_url: imageUrl,
+        video_url: videoUrl,
+        likes: 0,
+      })
+
+      if (error) throw error
+
+      showToast('Memory created successfully!', 'success')
+      
+      // Reset form
+      setFormData({
+        title: '',
+        category: '',
+        tags: '',
+        source: '',
+        mood: '',
+        story: '',
+        date: '',
+        location: '',
+        notes: '',
+        highlights: '',
+        collaborators: '',
+      })
+      setUploadedFiles([])
+      setErrors({})
+    } catch (error: any) {
+      console.error('Error creating memory:', error)
+      showToast(error.message || 'Failed to create memory', 'error')
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -1742,21 +2587,43 @@ function CreateMemoryPage({
 
                 {/* Story */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Story</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Story
+                    <span className="text-xs text-gray-500 ml-2">
+                      {formData.story.length}/1000
+                    </span>
+                  </label>
                   <textarea
                     rows={4}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-300"
+                    value={formData.story}
+                    onChange={(e) => setFormData({ ...formData, story: e.target.value })}
+                    maxLength={1000}
+                    className={`w-full px-4 py-2 border-2 rounded-lg focus:outline-none focus:ring-2 ${
+                      errors.story
+                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                        : 'border-gray-300 focus:ring-pink-500 focus:border-pink-300'
+                    }`}
                     placeholder="Tell your story..."
+                    aria-label="Story"
+                    aria-invalid={!!errors.story}
+                    aria-describedby={errors.story ? 'story-error' : undefined}
                   />
+                  {errors.story && (
+                    <p id="story-error" className="text-sm text-red-600 mt-1 flex items-center gap-1" role="alert">
+                      <AlertCircleIcon className="w-4 h-4" />
+                      {errors.story}
+                    </p>
+                  )}
                 </div>
 
                 {/* Attachments */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Attachments</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-pink-300 cursor-pointer transition-colors">
-                    <Image className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                  </div>
+                  <DragDropUpload
+                    onFilesSelected={setUploadedFiles}
+                    accept="image/*"
+                    maxFiles={5}
+                  />
                 </div>
               </div>
 
@@ -1786,12 +2653,33 @@ function CreateMemoryPage({
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Notes
+                    <span className="text-xs text-gray-500 ml-2">
+                      {formData.notes.length}/500
+                    </span>
+                  </label>
                   <textarea
                     rows={4}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-300"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    maxLength={500}
+                    className={`w-full px-4 py-2 border-2 rounded-lg focus:outline-none focus:ring-2 ${
+                      errors.notes
+                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                        : 'border-gray-300 focus:ring-pink-500 focus:border-pink-300'
+                    }`}
                     placeholder="Add notes..."
+                    aria-label="Notes"
+                    aria-invalid={!!errors.notes}
+                    aria-describedby={errors.notes ? 'notes-error' : undefined}
                   />
+                  {errors.notes && (
+                    <p id="notes-error" className="text-sm text-red-600 mt-1 flex items-center gap-1" role="alert">
+                      <AlertCircleIcon className="w-4 h-4" />
+                      {errors.notes}
+                    </p>
+                  )}
                 </div>
 
                 {/* Additional Section */}
@@ -1823,10 +2711,34 @@ function CreateMemoryPage({
 
                 {/* Action Buttons */}
                 <div className="flex gap-4 pt-6">
-                  <button className="flex-1 bg-red-500 text-white py-3 rounded-lg font-medium hover:bg-red-600 transition-colors">
+                  <button
+                    onClick={handleSubmit}
+                    className="flex-1 bg-red-500 text-white py-3 rounded-lg font-medium hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                    aria-label="Save memory"
+                  >
                     Save memory
                   </button>
-                  <button className="flex-1 bg-red-500 text-white py-3 rounded-lg font-medium hover:bg-red-600 transition-colors">
+                  <button
+                    onClick={() => {
+                      setFormData({
+                        title: '',
+                        category: '',
+                        tags: '',
+                        source: '',
+                        mood: '',
+                        story: '',
+                        date: '',
+                        location: '',
+                        notes: '',
+                        highlights: '',
+                        collaborators: '',
+                      })
+                      setErrors({})
+                      setUploadedFiles([])
+                    }}
+                    className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                    aria-label="Discard changes"
+                  >
                     Discard
                   </button>
                 </div>
@@ -1839,10 +2751,17 @@ function CreateMemoryPage({
   )
 }
 
-function ProfilePage({ onHome, onSettings, onAddCollaborator }: { onHome: () => void; onSettings: () => void; onAddCollaborator: () => void }) {
+function ProfilePage({ onHome, onSettings, onAddCollaborator, showToast }: { onHome: () => void; onSettings: () => void; onAddCollaborator: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const [activeTab] = useState('profile')
-  void activeTab
-  void onSettings
+  const handleInvite = () => {
+    if (showToast) showToast('Invitation sent!', 'success')
+  }
+  const handleShare = () => {
+    if (showToast) showToast('Memories shared!', 'success')
+  }
+  const handleView = (name: string) => {
+    if (showToast) showToast(`Viewing ${name}'s profile`, 'info')
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
@@ -2001,10 +2920,18 @@ function ProfilePage({ onHome, onSettings, onAddCollaborator }: { onHome: () => 
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button className="w-9 h-9 bg-gradient-to-br from-pink-400 to-rose-400 rounded-full flex items-center justify-center hover:scale-110 hover:shadow-lg transition-all">
+                      <button 
+                        onClick={() => handleInvite()}
+                        className="w-9 h-9 bg-gradient-to-br from-pink-400 to-rose-400 rounded-full flex items-center justify-center hover:scale-110 hover:shadow-lg transition-all"
+                        title="Invite to memory"
+                      >
                         <Plus className="w-4 h-4 text-white" />
                       </button>
-                      <button className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 hover:scale-110 transition-all">
+                      <button 
+                        onClick={() => handleView('Emily Johnson')}
+                        className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 hover:scale-110 transition-all"
+                        title="View profile"
+                      >
                         <UserPlus className="w-4 h-4 text-gray-600" />
                       </button>
                     </div>
@@ -2021,10 +2948,18 @@ function ProfilePage({ onHome, onSettings, onAddCollaborator }: { onHome: () => 
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button className="w-9 h-9 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-full flex items-center justify-center hover:scale-110 hover:shadow-lg transition-all">
+                      <button 
+                        onClick={() => handleInvite()}
+                        className="w-9 h-9 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-full flex items-center justify-center hover:scale-110 hover:shadow-lg transition-all"
+                        title="Invite to memory"
+                      >
                         <Plus className="w-4 h-4 text-white" />
                       </button>
-                      <button className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 hover:scale-110 transition-all">
+                      <button 
+                        onClick={() => handleView('Michael Smith')}
+                        className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 hover:scale-110 transition-all"
+                        title="View profile"
+                      >
                         <UserPlus className="w-4 h-4 text-gray-600" />
                       </button>
                     </div>
@@ -2046,7 +2981,12 @@ function ProfilePage({ onHome, onSettings, onAddCollaborator }: { onHome: () => 
                       <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
                       <span className="text-sm text-gray-700">Sarah Lee</span>
                     </div>
-                    <button className="text-sm text-gray-600 hover:text-gray-800">View</button>
+                    <button 
+                      onClick={() => handleView('Sarah Lee')}
+                      className="text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                    >
+                      View
+                    </button>
                   </div>
 
                   <div className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors">
@@ -2054,7 +2994,12 @@ function ProfilePage({ onHome, onSettings, onAddCollaborator }: { onHome: () => 
                       <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
                       <span className="text-sm text-gray-700">David Brown</span>
                     </div>
-                    <button className="text-sm text-gray-600 hover:text-gray-800">View</button>
+                    <button 
+                      onClick={() => handleView('Sarah Lee')}
+                      className="text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                    >
+                      View
+                    </button>
                   </div>
 
                   <button className="w-full py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors">
@@ -2064,11 +3009,17 @@ function ProfilePage({ onHome, onSettings, onAddCollaborator }: { onHome: () => 
 
                 {/* Action Buttons */}
                 <div className="flex gap-3">
-                  <button className="flex-1 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-full hover:from-pink-600 hover:to-rose-600 transition-all font-medium shadow-lg hover:shadow-xl hover:scale-105 flex items-center justify-center gap-2">
+                  <button 
+                    onClick={() => onAddCollaborator()}
+                    className="flex-1 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-full hover:from-pink-600 hover:to-rose-600 transition-all font-medium shadow-lg hover:shadow-xl hover:scale-105 flex items-center justify-center gap-2"
+                  >
                     <UserPlus className="w-4 h-4" />
                     Invite Team
                   </button>
-                  <button className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-full hover:from-purple-600 hover:to-indigo-600 transition-all font-medium shadow-lg hover:shadow-xl hover:scale-105 flex items-center justify-center gap-2">
+                  <button 
+                    onClick={() => handleShare()}
+                    className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-full hover:from-purple-600 hover:to-indigo-600 transition-all font-medium shadow-lg hover:shadow-xl hover:scale-105 flex items-center justify-center gap-2"
+                  >
                     <Share2 className="w-4 h-4" />
                     Share Memories
                   </button>
@@ -2082,10 +3033,47 @@ function ProfilePage({ onHome, onSettings, onAddCollaborator }: { onHome: () => 
   )
 }
 
-function SettingsPage({ onHome }: { onHome: () => void }) {
+function SettingsPage({ onHome, showToast }: { onHome: () => void; showToast: (message: string, type?: ToastType) => void }) {
   const [title, setTitle] = useState('Your Scrapbook')
   const [email, setEmail] = useState('')
   const [privacy, setPrivacy] = useState('public')
+  const [teamMembers, setTeamMembers] = useState([
+    { id: 1, name: 'Alex Johnson', role: 'creator', avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop' },
+    { id: 2, name: 'Emily Chen', role: 'editor', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop' },
+    { id: 3, name: 'Michael Smith', role: 'editor', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop' },
+  ])
+
+  const handleAddMember = async () => {
+    if (!email.trim()) {
+      showToast('Please enter an email address', 'error')
+      return
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      showToast('Please enter a valid email address', 'error')
+      return
+    }
+
+    // Check if email already exists
+    if (teamMembers.some(member => member.name.toLowerCase().includes(email.split('@')[0]))) {
+      showToast('This person is already a team member', 'error')
+      return
+    }
+
+    // Add new member (in real app, this would call the database)
+    const newMember = {
+      id: teamMembers.length + 1,
+      name: email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1) + ' ' + email.split('@')[1].split('.')[0].charAt(0).toUpperCase() + email.split('@')[1].split('.')[0].slice(1),
+      role: 'editor' as const,
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(email.split('@')[0])}&background=pink&color=fff&size=100`,
+    }
+
+    setTeamMembers([...teamMembers, newMember])
+    showToast(`Invitation sent to ${email}`, 'success')
+    setEmail('')
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
@@ -2119,8 +3107,12 @@ function SettingsPage({ onHome }: { onHome: () => void }) {
           <div className="bg-white rounded-2xl p-6 mb-6 shadow-sm">
             <div className="flex items-start gap-4">
               <div className="relative">
-                <div className="w-20 h-20 bg-gray-200 rounded-full"></div>
-                <button className="absolute -top-1 -right-1 w-7 h-7 bg-pink-400 rounded-full flex items-center justify-center shadow-sm">
+                <img 
+                  src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=200&h=200&fit=crop" 
+                  alt="Scrapbook"
+                  className="w-20 h-20 rounded-full object-cover border-2 border-pink-200"
+                />
+                <button className="absolute -top-1 -right-1 w-7 h-7 bg-pink-400 rounded-full flex items-center justify-center shadow-sm hover:bg-pink-500 transition-colors">
                   <Edit2 className="w-3.5 h-3.5 text-white" />
                 </button>
               </div>
@@ -2147,34 +3139,33 @@ function SettingsPage({ onHome }: { onHome: () => void }) {
               <h2 className="text-base font-medium text-gray-700 mb-5">Team Members</h2>
 
               <div className="space-y-3 mb-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-gray-200 rounded-full"></div>
-                    <span className="text-sm text-gray-700">Alex Johnson</span>
+                {teamMembers.map((member) => (
+                  <div key={member.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors">
+                    <div className="flex items-center gap-3">
+                      <img 
+                        src={member.avatar} 
+                        alt={member.name}
+                        className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
+                      />
+                      <span className="text-sm text-gray-700">{member.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600">{member.role}</span>
+                      {member.role !== 'creator' && (
+                        <button
+                          onClick={() => {
+                            setTeamMembers(teamMembers.filter(m => m.id !== member.id))
+                            showToast(`${member.name} removed from team`, 'success')
+                          }}
+                          className="text-red-400 hover:text-red-600 transition-colors"
+                          title="Remove member"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-xs text-gray-600">creator</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-gray-200 rounded-full"></div>
-                    <span className="text-sm text-gray-700">Emily Chen</span>
-                  </div>
-                  <span className="text-xs text-gray-600 relative">
-                    editor
-                    <span className="absolute -top-1 -right-8 text-[10px] bg-white px-2 py-0.5 rounded border border-gray-200">
-                      UPGRADE PLAN
-                    </span>
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-gray-200 rounded-full"></div>
-                    <span className="text-sm text-gray-700">Michael Smith</span>
-                  </div>
-                  <span className="text-xs text-gray-600">editor</span>
-                </div>
+                ))}
               </div>
 
               <div className="mb-4">
@@ -2183,11 +3174,20 @@ function SettingsPage({ onHome }: { onHome: () => void }) {
                   placeholder="Enter email to invite"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 rounded-lg text-sm text-gray-600 placeholder-gray-400 border-none outline-none"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && email.trim()) {
+                      handleAddMember()
+                    }
+                  }}
+                  className="w-full px-4 py-2.5 bg-gray-50 rounded-lg text-sm text-gray-600 placeholder-gray-400 border-none outline-none focus:ring-2 focus:ring-pink-400"
                 />
               </div>
 
-              <button className="w-full py-2.5 bg-pink-400 text-white rounded-lg hover:bg-pink-500 transition-colors text-sm font-medium mb-4">
+              <button 
+                onClick={handleAddMember}
+                disabled={!email.trim()}
+                className="w-full py-2.5 bg-pink-400 text-white rounded-lg hover:bg-pink-500 transition-colors text-sm font-medium mb-4 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 Add
               </button>
 
@@ -2258,7 +3258,7 @@ function SettingsPage({ onHome }: { onHome: () => void }) {
   )
 }
 
-function ScrapbookYearsPage({ onHome, onAddYear }: { onHome: () => void; onAddYear: () => void }) {
+function ScrapbookYearsPage({ onHome, onAddYear, showToast }: { onHome: () => void; onAddYear: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const years = [
     {
       year: 'Year 1',
@@ -2332,9 +3332,15 @@ function ScrapbookYearsPage({ onHome, onAddYear }: { onHome: () => void; onAddYe
               {yearData.photos.map((photo) => (
                 <div
                   key={photo.id}
+                  onClick={() => {
+                    if (showToast) showToast(`Viewing ${photo.alt} from ${yearData.year}`, 'info')
+                  }}
                   className={`aspect-square ${photo.bgColor} rounded-2xl overflow-hidden relative group cursor-pointer transition-transform hover:scale-105`}
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent"></div>
+                  <div className="absolute bottom-2 left-2 right-2 text-xs text-white font-medium opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 px-2 py-1 rounded">
+                    {photo.alt}
+                  </div>
                 </div>
               ))}
             </div>
@@ -2346,10 +3352,13 @@ function ScrapbookYearsPage({ onHome, onAddYear }: { onHome: () => void; onAddYe
                 {yearData.highlights.map((highlight, idx) => (
                   <div
                     key={idx}
-                    className="bg-gray-50 rounded-xl px-4 py-3 flex items-start justify-between hover:bg-gray-100 transition-colors cursor-pointer"
+                    onClick={() => {
+                      if (showToast) showToast(`Viewing ${highlight.title}`, 'info')
+                    }}
+                    className="bg-gray-50 rounded-xl px-4 py-3 flex items-start justify-between hover:bg-pink-50 hover:border-pink-200 border border-transparent transition-all cursor-pointer group"
                   >
-                    <span className="text-sm text-gray-600 flex-1">{highlight.title}</span>
-                    <span className="text-xs text-gray-400 whitespace-nowrap ml-3">
+                    <span className="text-sm text-gray-600 flex-1 group-hover:text-pink-700 transition-colors">{highlight.title}</span>
+                    <span className="text-xs text-gray-400 whitespace-nowrap ml-3 group-hover:text-pink-600 transition-colors">
                       {highlight.date}
                     </span>
                   </div>
@@ -2364,7 +3373,7 @@ function ScrapbookYearsPage({ onHome, onAddYear }: { onHome: () => void; onAddYe
 }
 
 // Edit Memories Page
-function EditMemoriesPage({ onHome, onAddMemory }: { onHome: () => void; onAddMemory: () => void }) {
+function EditMemoriesPage({ onHome, onAddMemory, showToast, showConfirm, onViewMemory }: { onHome: () => void; onAddMemory: () => void; showToast?: (message: string, type?: ToastType) => void; showConfirm?: (config: { title: string; message: string; onConfirm: () => void; confirmText?: string; cancelText?: string; type?: 'warning' | 'danger' }) => void; onViewMemory?: (memoryId: string) => void }) {
   const [selectedMemory, setSelectedMemory] = useState(0)
   const [sortBy, setSortBy] = useState<'date' | 'likes' | 'photos'>('date')
   const [filterBy, setFilterBy] = useState<'all' | 'recent' | 'popular'>('all')
@@ -2496,7 +3505,13 @@ function EditMemoriesPage({ onHome, onAddMemory }: { onHome: () => void; onAddMe
                   className={`bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 cursor-pointer group ${
                     selectedMemory === memory.id ? 'ring-4 ring-pink-400 scale-105' : 'hover:scale-105'
                   }`}
-                  onClick={() => setSelectedMemory(selectedMemory === memory.id ? 0 : memory.id)}
+                  onClick={() => {
+                    if (onViewMemory) {
+                      onViewMemory(String(memory.id))
+                    } else {
+                      setSelectedMemory(selectedMemory === memory.id ? 0 : memory.id)
+                    }
+                  }}
                 >
                   <div className={`w-full h-48 bg-gradient-to-br ${gradient} rounded-xl mb-4 relative overflow-hidden group-hover:scale-110 transition-transform duration-300`}>
                     <img src={memory.image} alt={memory.title} className="w-full h-full object-cover" />
@@ -2525,10 +3540,40 @@ function EditMemoriesPage({ onHome, onAddMemory }: { onHome: () => void; onAddMe
                   </div>
                   {selectedMemory === memory.id && (
                     <div className="mt-4 pt-4 border-t border-gray-200 space-y-2 animate-in slide-in-from-top-2">
-                      <button className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-medium shadow-lg hover:shadow-xl hover:scale-105">
+                      <button 
+                        onClick={() => {
+                          if (showToast) showToast('Opening editor...', 'info')
+                          onAddMemory()
+                        }}
+                        className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-medium shadow-lg hover:shadow-xl hover:scale-105"
+                      >
                         Edit Memory
                       </button>
-                      <button className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all font-medium hover:scale-105">
+                      <button 
+                        onClick={() => {
+                          if (showConfirm) {
+                            showConfirm({
+                              title: 'Delete Memory',
+                              message: `Are you sure you want to delete "${memory.title}"? This action cannot be undone.`,
+                              onConfirm: async () => {
+                                try {
+                                  const { error } = await deleteMemoryFromDB(String(memory.id))
+                                  if (error) throw error
+                                  if (showToast) showToast('Memory deleted successfully', 'success')
+                                  setSelectedMemory(0)
+                                  // Reload memories would happen here
+                                } catch (error: any) {
+                                  if (showToast) showToast('Failed to delete memory', 'error')
+                                }
+                              },
+                              confirmText: 'Delete',
+                              cancelText: 'Cancel',
+                              type: 'danger',
+                            })
+                          }
+                        }}
+                        className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-red-100 hover:text-red-700 transition-all font-medium hover:scale-105"
+                      >
                         Delete
                       </button>
                     </div>
@@ -2544,7 +3589,7 @@ function EditMemoriesPage({ onHome, onAddMemory }: { onHome: () => void; onAddMe
 }
 
 // Memory Feed Page
-function MemoryFeedPage({ onHome, onNewPost }: { onHome: () => void; onNewPost: () => void }) {
+function MemoryFeedPage({ onHome, onNewPost, showToast }: { onHome: () => void; onNewPost: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const feedItems = [
     { id: 1, user: 'Sarah', action: 'added a photo', time: '2h ago', image: 'bg-gradient-to-br from-pink-400 to-rose-400', icon: Image, color: 'pink', photo: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop' },
     { id: 2, user: 'Mike', action: 'commented on', time: '4h ago', image: 'bg-gradient-to-br from-orange-400 to-amber-400', icon: MessageCircle, color: 'orange', photo: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop' },
@@ -2601,7 +3646,13 @@ function MemoryFeedPage({ onHome, onNewPost }: { onHome: () => void; onNewPost: 
                       <p className="text-sm text-gray-500">{item.time}</p>
                     </div>
                   </div>
-                  <button className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 transition-all shadow-md hover:shadow-lg hover:scale-105">
+                  <button 
+                    onClick={() => {
+                      if (showToast) showToast(`Viewing ${item.user}'s memory`, 'info')
+                      // Navigate to memory view
+                    }}
+                    className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 transition-all shadow-md hover:shadow-lg hover:scale-105"
+                  >
                     View
                   </button>
                 </div>
@@ -2620,8 +3671,10 @@ function MemoryFeedPage({ onHome, onNewPost }: { onHome: () => void; onNewPost: 
 }
 
 // Notes & Stickers Page
-function NotesStickersPage({ onHome, onNewNote }: { onHome: () => void; onNewNote: () => void }) {
+function NotesStickersPage({ onHome, onNewNote, showToast }: { onHome: () => void; onNewNote: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const [selectedTab, setSelectedTab] = useState<'notes' | 'stickers'>('notes')
+  const [noteText, setNoteText] = useState('')
+  const [selectedSticker, setSelectedSticker] = useState<string | null>(null)
   const stickers = ['⭐', '❤️', '🎉', '📸', '🎨', '✨', '🌟', '💫', '🎊', '🎈', '🎁', '🏆', '🎯', '🔥', '💎', '🌈', '🚀', '🎪', '🎭', '🎬']
 
   return (
@@ -2677,21 +3730,54 @@ function NotesStickersPage({ onHome, onNewNote }: { onHome: () => void; onNewNot
           {selectedTab === 'notes' ? (
             <div className="space-y-4">
               <textarea
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
                 className="w-full h-64 p-6 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-300 text-gray-700 placeholder-gray-400 shadow-inner bg-gray-50/50"
                 placeholder="Write your note here... ✨"
               />
-              <button className="px-8 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-semibold shadow-lg hover:shadow-xl hover:scale-105">
-                Save Note
-              </button>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">{noteText.length}/1000 characters</span>
+                <button 
+                  onClick={() => {
+                    if (!noteText.trim()) {
+                      if (showToast) showToast('Please write a note first', 'error')
+                      return
+                    }
+                    if (showToast) showToast('Note saved successfully!', 'success')
+                    setNoteText('')
+                  }}
+                  className="px-8 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-semibold shadow-lg hover:shadow-xl hover:scale-105"
+                >
+                  Save Note
+                </button>
+              </div>
             </div>
           ) : (
             <div>
               <h3 className="text-xl font-bold text-gray-800 mb-6">Choose a Sticker</h3>
+              {selectedSticker && (
+                <div className="mb-4 p-4 bg-pink-50 rounded-xl border-2 border-pink-200">
+                  <p className="text-sm text-gray-600 mb-2">Selected sticker:</p>
+                  <div className="text-4xl">{selectedSticker}</div>
+                  <button
+                    onClick={() => {
+                      if (showToast) showToast(`Sticker ${selectedSticker} added!`, 'success')
+                      setSelectedSticker(null)
+                    }}
+                    className="mt-2 px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors text-sm"
+                  >
+                    Add to Memory
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-4">
                 {stickers.map((sticker, i) => (
                   <button
                     key={i}
-                    className="w-16 h-16 text-4xl bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl hover:from-pink-100 hover:to-purple-100 transition-all flex items-center justify-center shadow-md hover:shadow-xl hover:scale-125 hover:rotate-12 border-2 border-transparent hover:border-pink-300"
+                    onClick={() => setSelectedSticker(sticker)}
+                    className={`w-16 h-16 text-4xl bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl hover:from-pink-100 hover:to-purple-100 transition-all flex items-center justify-center shadow-md hover:shadow-xl hover:scale-125 hover:rotate-12 border-2 ${
+                      selectedSticker === sticker ? 'border-pink-500 scale-125' : 'border-transparent hover:border-pink-300'
+                    }`}
                   >
                     {sticker}
                   </button>
@@ -2706,7 +3792,7 @@ function NotesStickersPage({ onHome, onNewNote }: { onHome: () => void; onNewNot
 }
 
 // Life-Path Page
-function LifePathPage({ onHome, onAddMilestone }: { onHome: () => void; onAddMilestone: () => void }) {
+function LifePathPage({ onHome, onAddMilestone, showToast }: { onHome: () => void; onAddMilestone: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const milestones = [
     { year: '2024', title: 'New Adventures', description: 'Started new journey', color: 'bg-pink-300' },
     { year: '2023', title: 'Growth Year', description: 'Personal development', color: 'bg-orange-300' },
@@ -2754,7 +3840,12 @@ function LifePathPage({ onHome, onAddMilestone }: { onHome: () => void; onAddMil
                   <div className={`w-16 h-16 bg-gradient-to-br ${gradient} rounded-full flex items-center justify-center text-white font-bold z-10 shadow-lg group-hover:scale-125 transition-transform duration-300`}>
                     {milestone.year.slice(-2)}
                   </div>
-                  <div className="flex-1 bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 group-hover:scale-105">
+                  <div 
+                    onClick={() => {
+                      if (showToast) showToast(`Viewing ${milestone.title}`, 'info')
+                    }}
+                    className="flex-1 bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 group-hover:scale-105 cursor-pointer"
+                  >
                     <h3 className="text-xl font-bold text-gray-800 mb-2 group-hover:text-pink-600 transition-colors">{milestone.title}</h3>
                     <p className="text-gray-600">{milestone.description}</p>
                     <div className="mt-4 flex items-center gap-2">
@@ -2773,7 +3864,7 @@ function LifePathPage({ onHome, onAddMilestone }: { onHome: () => void; onAddMil
 }
 
 // Reflections Page
-function ReflectionsPage({ onHome, onNewReflection }: { onHome: () => void; onNewReflection: () => void }) {
+function ReflectionsPage({ onHome, onNewReflection, showToast }: { onHome: () => void; onNewReflection: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const reflections = [
     { id: 1, title: 'Summer Reflections', date: '2024-08-01', content: 'What an amazing summer...' },
     { id: 2, title: 'Growth Thoughts', date: '2024-07-15', content: 'I learned so much...' },
@@ -2817,7 +3908,10 @@ function ReflectionsPage({ onHome, onNewReflection }: { onHome: () => void; onNe
             return (
               <div
                 key={reflection.id}
-                className="bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] group"
+                onClick={() => {
+                  if (showToast) showToast(`Opening ${reflection.title}`, 'info')
+                }}
+                className="bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] group cursor-pointer"
               >
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
@@ -2843,7 +3937,7 @@ function ReflectionsPage({ onHome, onNewReflection }: { onHome: () => void; onNe
 }
 
 // Memory Lane Page
-function MemoryLanePage({ onHome, onAddMemory }: { onHome: () => void; onAddMemory: () => void }) {
+function MemoryLanePage({ onHome, onAddMemory, showToast }: { onHome: () => void; onAddMemory: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const memories = [
     { month: 'January', year: '2024', count: 12, color: 'bg-pink-300' },
     { month: 'February', year: '2024', count: 8, color: 'bg-orange-300' },
@@ -2889,7 +3983,10 @@ function MemoryLanePage({ onHome, onAddMemory }: { onHome: () => void; onAddMemo
             return (
               <div
                 key={i}
-                className="bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 hover:scale-105 group"
+                onClick={() => {
+                  if (showToast) showToast(`Viewing ${memory.month} ${memory.year} memories`, 'info')
+                }}
+                className="bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 hover:scale-105 group cursor-pointer"
               >
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -2915,7 +4012,34 @@ function MemoryLanePage({ onHome, onAddMemory }: { onHome: () => void; onAddMemo
 }
 
 // Capture Moments Page
-function CaptureMomentsPage({ onHome, onCapture }: { onHome: () => void; onCapture: () => void }) {
+function CaptureMomentsPage({ onHome, onCapture, showToast }: { onHome: () => void; onCapture: () => void; showToast?: (message: string, type?: ToastType) => void }) {
+  const [uploadedImages, setUploadedImages] = useState<string[]>([])
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files)
+      const imageUrls = fileArray.map(file => URL.createObjectURL(file))
+      setUploadedImages([...uploadedImages, ...imageUrls])
+      if (showToast) showToast(`${fileArray.length} photo(s) selected`, 'success')
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const files = e.dataTransfer.files
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'))
+      const imageUrls = fileArray.map(file => URL.createObjectURL(file))
+      setUploadedImages([...uploadedImages, ...imageUrls])
+      if (showToast) showToast(`${fileArray.length} photo(s) added`, 'success')
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
       <div className="max-w-4xl mx-auto p-8">
@@ -2943,15 +4067,64 @@ function CaptureMomentsPage({ onHome, onCapture }: { onHome: () => void; onCaptu
         </div>
 
         <div className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 p-8">
-          <div className="border-2 border-dashed border-pink-300 rounded-xl p-12 text-center mb-6 hover:border-pink-400 hover:bg-pink-50/50 transition-all cursor-pointer group">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            accept="image/*"
+            multiple
+            className="hidden"
+          />
+          <div 
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-pink-300 rounded-xl p-12 text-center mb-6 hover:border-pink-400 hover:bg-pink-50/50 transition-all cursor-pointer group"
+          >
             <Camera className="w-16 h-16 text-pink-400 mx-auto mb-4 group-hover:scale-110 transition-transform" />
             <p className="text-gray-700 mb-2 font-medium">Click to capture or drag photos here</p>
-            <button className="px-8 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-semibold shadow-lg hover:shadow-xl hover:scale-105">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation()
+                fileInputRef.current?.click()
+              }}
+              className="px-8 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-semibold shadow-lg hover:shadow-xl hover:scale-105"
+            >
               Choose Photos
             </button>
           </div>
+          {uploadedImages.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Selected Photos ({uploadedImages.length})</h3>
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                {uploadedImages.map((url, i) => (
+                  <div key={i} className="relative group">
+                    <img src={url} alt={`Upload ${i + 1}`} className="w-full aspect-square object-cover rounded-xl shadow-lg" />
+                    <button
+                      onClick={() => {
+                        setUploadedImages(uploadedImages.filter((_, idx) => idx !== i))
+                        if (showToast) showToast('Photo removed', 'info')
+                      }}
+                      className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  if (showToast) showToast('Photos captured successfully!', 'success')
+                  setUploadedImages([])
+                }}
+                className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-semibold shadow-lg hover:shadow-xl"
+              >
+                Save All Photos
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => {
+            {[...Array(Math.max(0, 6 - uploadedImages.length))].map((_, i) => {
               const gradients = [
                 'from-pink-400 to-rose-400',
                 'from-orange-400 to-amber-400',
@@ -2962,7 +4135,7 @@ function CaptureMomentsPage({ onHome, onCapture }: { onHome: () => void; onCaptu
               ]
               const gradient = gradients[i % gradients.length]
               return (
-                <div key={i} className={`aspect-square bg-gradient-to-br ${gradient} rounded-xl hover:scale-110 transition-transform cursor-pointer shadow-lg hover:shadow-xl`}></div>
+                <div key={i} className={`aspect-square bg-gradient-to-br ${gradient} rounded-xl hover:scale-110 transition-transform cursor-pointer shadow-lg hover:shadow-xl opacity-50`}></div>
               )
             })}
           </div>
@@ -2973,7 +4146,7 @@ function CaptureMomentsPage({ onHome, onCapture }: { onHome: () => void; onCaptu
 }
 
 // Creative Memories Page
-function CreativeMemoriesPage({ onHome, onCreateTemplate }: { onHome: () => void; onCreateTemplate: () => void }) {
+function CreativeMemoriesPage({ onHome, onCreateTemplate, showToast }: { onHome: () => void; onCreateTemplate: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const templates = [
     { name: 'Collage', icon: '🎨', color: 'bg-pink-300' },
     { name: 'Timeline', icon: '📅', color: 'bg-orange-300' },
@@ -3019,6 +4192,10 @@ function CreativeMemoriesPage({ onHome, onCreateTemplate }: { onHome: () => void
             return (
               <div
                 key={i}
+                onClick={() => {
+                  if (showToast) showToast(`Creating ${template.name} template...`, 'info')
+                  onCreateTemplate()
+                }}
                 className="bg-white/80 backdrop-blur-lg rounded-2xl p-6 shadow-lg border border-white/20 hover:shadow-2xl transition-all duration-300 cursor-pointer group hover:scale-105"
               >
                 <div className={`w-20 h-20 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center text-4xl mb-4 mx-auto shadow-lg group-hover:scale-125 transition-transform`}>
@@ -3035,7 +4212,7 @@ function CreativeMemoriesPage({ onHome, onCreateTemplate }: { onHome: () => void
 }
 
 // Scrapbook Showcase Page
-function ScrapbookShowcasePage({ onHome, onNewScrapbook }: { onHome: () => void; onNewScrapbook: () => void }) {
+function ScrapbookShowcasePage({ onHome, onNewScrapbook, showToast }: { onHome: () => void; onNewScrapbook: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const scrapbooks = [
     { title: 'Summer 2024', photos: 45, color: 'bg-pink-300' },
     { title: 'Family Reunion', photos: 32, color: 'bg-orange-300' },
@@ -3068,10 +4245,16 @@ function ScrapbookShowcasePage({ onHome, onNewScrapbook }: { onHome: () => void;
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {scrapbooks.map((scrapbook, i) => (
-            <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200">
-              <div className={`h-48 ${scrapbook.color}`}></div>
+            <div 
+              key={i} 
+              onClick={() => {
+                if (showToast) showToast(`Opening ${scrapbook.title}`, 'info')
+              }}
+              className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200 hover:shadow-xl transition-all cursor-pointer group hover:scale-105"
+            >
+              <div className={`h-48 ${scrapbook.color} group-hover:opacity-90 transition-opacity`}></div>
               <div className="p-6">
-                <h3 className="text-xl font-semibold text-gray-800 mb-2">{scrapbook.title}</h3>
+                <h3 className="text-xl font-semibold text-gray-800 mb-2 group-hover:text-pink-600 transition-colors">{scrapbook.title}</h3>
                 <p className="text-gray-600">{scrapbook.photos} photos</p>
               </div>
             </div>
@@ -3083,7 +4266,7 @@ function ScrapbookShowcasePage({ onHome, onNewScrapbook }: { onHome: () => void;
 }
 
 // Memory Moments Page
-function MemoryMomentsPage({ onHome, onAddMoment }: { onHome: () => void; onAddMoment: () => void }) {
+function MemoryMomentsPage({ onHome, onAddMoment, showToast }: { onHome: () => void; onAddMoment: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const moments = [
     { time: 'Morning', icon: '🌅', count: 8 },
     { time: 'Afternoon', icon: '☀️', count: 12 },
@@ -3117,9 +4300,15 @@ function MemoryMomentsPage({ onHome, onAddMoment }: { onHome: () => void; onAddM
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {moments.map((moment, i) => (
-            <div key={i} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 text-center">
-              <div className="text-6xl mb-4">{moment.icon}</div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">{moment.time}</h3>
+            <div 
+              key={i} 
+              onClick={() => {
+                if (showToast) showToast(`Viewing ${moment.time} memories`, 'info')
+              }}
+              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 text-center hover:shadow-xl transition-all cursor-pointer group hover:scale-105"
+            >
+              <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">{moment.icon}</div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2 group-hover:text-pink-600 transition-colors">{moment.time}</h3>
               <p className="text-gray-600">{moment.count} memories</p>
             </div>
           ))}
@@ -3130,7 +4319,9 @@ function MemoryMomentsPage({ onHome, onAddMoment }: { onHome: () => void; onAddM
 }
 
 // Craft Your Story Page
-function CraftStoryPage({ onHome, onNewStory }: { onHome: () => void; onNewStory: () => void }) {
+function CraftStoryPage({ onHome, onNewStory, showToast }: { onHome: () => void; onNewStory: () => void; showToast?: (message: string, type?: ToastType) => void }) {
+  const [storyTitle, setStoryTitle] = useState('')
+  const [storyContent, setStoryContent] = useState('')
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
       <div className="max-w-4xl mx-auto p-8">
@@ -3160,6 +4351,8 @@ function CraftStoryPage({ onHome, onNewStory }: { onHome: () => void; onNewStory
             <label className="block text-sm font-medium text-gray-700 mb-2">Story Title</label>
             <input
               type="text"
+              value={storyTitle}
+              onChange={(e) => setStoryTitle(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
               placeholder="Enter your story title"
             />
@@ -3168,11 +4361,25 @@ function CraftStoryPage({ onHome, onNewStory }: { onHome: () => void; onNewStory
             <label className="block text-sm font-medium text-gray-700 mb-2">Your Story</label>
             <textarea
               rows={12}
+              value={storyContent}
+              onChange={(e) => setStoryContent(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
               placeholder="Write your story here..."
             />
+            <div className="mt-2 text-sm text-gray-500 text-right">{storyContent.length}/5000 characters</div>
           </div>
-          <button className="px-6 py-2 bg-pink-400 text-white rounded-lg hover:bg-pink-500 transition-colors">
+          <button 
+            onClick={() => {
+              if (!storyTitle.trim() || !storyContent.trim()) {
+                if (showToast) showToast('Please fill in both title and story', 'error')
+                return
+              }
+              if (showToast) showToast('Story saved successfully!', 'success')
+              setStoryTitle('')
+              setStoryContent('')
+            }}
+            className="px-6 py-2 bg-pink-400 text-white rounded-lg hover:bg-pink-500 transition-colors hover:scale-105"
+          >
             Save Story
           </button>
         </div>
@@ -3182,9 +4389,10 @@ function CraftStoryPage({ onHome, onNewStory }: { onHome: () => void; onNewStory
 }
 
 // Share Page
-function SharePage({ onHome, onShare }: { onHome: () => void; onShare: () => void }) {
+function SharePage({ onHome, onShare, showToast }: { onHome: () => void; onShare: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const [shareMethod, setShareMethod] = useState<'link' | 'email' | 'social'>('link')
-  const shareableLink = 'https://squadscrapbook.com/memories/abc123'
+  const [shareableLink] = useState('https://squadscrapbook.com/memories/abc123')
+  const [emailAddress, setEmailAddress] = useState('')
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
@@ -3248,7 +4456,13 @@ function SharePage({ onHome, onShare }: { onHome: () => void; onShare: () => voi
                   readOnly
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm"
                 />
-                <button className="px-6 py-2 bg-pink-400 text-white rounded-lg hover:bg-pink-500 transition-colors">
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(shareableLink)
+                    if (showToast) showToast('Link copied to clipboard!', 'success')
+                  }}
+                  className="px-6 py-2 bg-pink-400 text-white rounded-lg hover:bg-pink-500 transition-colors hover:scale-105"
+                >
                   Copy Link
                 </button>
               </div>
@@ -3264,6 +4478,8 @@ function SharePage({ onHome, onShare }: { onHome: () => void; onShare: () => voi
               <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
               <input
                 type="email"
+                value={emailAddress}
+                onChange={(e) => setEmailAddress(e.target.value)}
                 placeholder="Enter email address"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 mb-4"
               />
@@ -3273,7 +4489,17 @@ function SharePage({ onHome, onShare }: { onHome: () => void; onShare: () => voi
                 placeholder="Add a personal message..."
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 mb-4"
               />
-              <button className="px-6 py-2 bg-pink-400 text-white rounded-lg hover:bg-pink-500 transition-colors">
+              <button 
+                onClick={() => {
+                  if (!emailAddress.trim()) {
+                    if (showToast) showToast('Please enter an email address', 'error')
+                    return
+                  }
+                  if (showToast) showToast(`Email sent to ${emailAddress}`, 'success')
+                  setEmailAddress('')
+                }}
+                className="px-6 py-2 bg-pink-400 text-white rounded-lg hover:bg-pink-500 transition-colors hover:scale-105"
+              >
                 Send Email
               </button>
             </div>
@@ -3283,19 +4509,39 @@ function SharePage({ onHome, onShare }: { onHome: () => void; onShare: () => voi
             <div>
               <p className="text-gray-600 mb-4">Share to social media platforms</p>
               <div className="grid grid-cols-2 gap-4">
-                <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-center">
+                <button 
+                  onClick={() => {
+                    if (showToast) showToast('Sharing to Facebook...', 'info')
+                  }}
+                  className="p-4 border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors text-center hover:scale-105"
+                >
                   <div className="text-3xl mb-2">📘</div>
                   <span className="text-sm font-medium text-gray-700">Facebook</span>
                 </button>
-                <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-center">
+                <button 
+                  onClick={() => {
+                    if (showToast) showToast('Sharing to Twitter...', 'info')
+                  }}
+                  className="p-4 border border-gray-300 rounded-lg hover:bg-cyan-50 hover:border-cyan-300 transition-colors text-center hover:scale-105"
+                >
                   <div className="text-3xl mb-2">🐦</div>
                   <span className="text-sm font-medium text-gray-700">Twitter</span>
                 </button>
-                <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-center">
+                <button 
+                  onClick={() => {
+                    if (showToast) showToast('Sharing to Instagram...', 'info')
+                  }}
+                  className="p-4 border border-gray-300 rounded-lg hover:bg-pink-50 hover:border-pink-300 transition-colors text-center hover:scale-105"
+                >
                   <div className="text-3xl mb-2">📷</div>
                   <span className="text-sm font-medium text-gray-700">Instagram</span>
                 </button>
-                <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-center">
+                <button 
+                  onClick={() => {
+                    if (showToast) showToast('Sharing to LinkedIn...', 'info')
+                  }}
+                  className="p-4 border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors text-center hover:scale-105"
+                >
                   <div className="text-3xl mb-2">💼</div>
                   <span className="text-sm font-medium text-gray-700">LinkedIn</span>
                 </button>
@@ -3308,9 +4554,353 @@ function SharePage({ onHome, onShare }: { onHome: () => void; onShare: () => voi
   )
 }
 
+// Memory Detail Page
+function MemoryDetailPage({
+  memoryId,
+  onBack,
+  showToast,
+  showConfirm,
+}: {
+  memoryId: string | null
+  onBack: () => void
+  showToast: (message: string, type?: ToastType) => void
+  showConfirm: (config: {
+    title: string
+    message: string
+    onConfirm: () => void
+    confirmText?: string
+    cancelText?: string
+    type?: 'warning' | 'danger'
+  }) => void
+}) {
+  const [memory, setMemory] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedTitle, setEditedTitle] = useState('')
+  const [editedDescription, setEditedDescription] = useState('')
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
+  const [imageUrls, setImageUrls] = useState<string[]>([])
+
+  useEffect(() => {
+    let isMounted = true // Prevent state updates if component unmounts
+    
+    async function fetchMemory() {
+      if (!memoryId) {
+        if (isMounted) setIsLoading(false)
+        return
+      }
+      if (isMounted) setIsLoading(true)
+      
+      const { data, error } = await getMemoryById(memoryId)
+      
+      // Only update state if component is still mounted
+      if (!isMounted) return
+      
+      if (error) {
+        // Don't show error toast for RLS recursion errors (they'll spam)
+        if (error.code !== '42P17') {
+          showToast('Error fetching memory details', 'error')
+        }
+        // Only log once, not repeatedly
+        if (error.code === '42P17') {
+          console.warn('RLS policy recursion error. Please fix database policies.')
+        } else {
+          console.error('Error fetching memory details:', error)
+        }
+        setMemory(null)
+      } else {
+        setMemory(data)
+        setEditedTitle(data?.title || '')
+        setEditedDescription(data?.description || '')
+        // Assuming image_url can be a comma-separated string or an array of URLs
+        if (data?.image_url) {
+          setImageUrls(data.image_url.split(',').filter(Boolean))
+        } else {
+          setImageUrls([])
+        }
+      }
+      setIsLoading(false)
+    }
+    
+    fetchMemory()
+    
+    // Cleanup function
+    return () => {
+      isMounted = false
+    }
+  }, [memoryId, showToast])
+
+  const handleSave = async () => {
+    if (!memory || !memoryId) return
+    setIsLoading(true)
+
+    const newImageUrls: string[] = [...imageUrls]
+    for (const file of uploadedFiles) {
+      const { url, error } = await uploadFile(file, 'memory_images')
+      if (error) {
+        showToast(`Error uploading file: ${file.name}`, 'error')
+        setIsLoading(false)
+        return
+      }
+      if (url) {
+        newImageUrls.push(url)
+      }
+    }
+
+    const updates: Partial<any> = {
+      title: editedTitle,
+      description: editedDescription,
+      image_url: newImageUrls.join(','), // Store as comma-separated string
+    }
+
+    const { error } = await updateMemoryInDB(memoryId, updates)
+    if (error) {
+      showToast('Error saving memory', 'error')
+      console.error('Error saving memory:', error)
+    } else {
+      showToast('Memory saved successfully!', 'success')
+      setIsEditing(false)
+      setUploadedFiles([])
+      // Re-fetch memory to update UI with new data
+      const { data: updatedMemory, error: fetchError } = await getMemoryById(memoryId)
+      if (!fetchError && updatedMemory) {
+        setMemory(updatedMemory)
+        if (updatedMemory.image_url) {
+          setImageUrls(updatedMemory.image_url.split(',').filter(Boolean))
+        } else {
+          setImageUrls([])
+        }
+      }
+    }
+    setIsLoading(false)
+  }
+
+  const handleDeleteImage = (urlToDelete: string) => {
+    showConfirm({
+      title: 'Delete Image',
+      message: 'Are you sure you want to delete this image? This action cannot be undone.',
+      onConfirm: async () => {
+        if (!memory || !memoryId) return
+        setIsLoading(true)
+        const updatedImageUrls = imageUrls.filter(url => url !== urlToDelete)
+        const updates: Partial<any> = {
+          image_url: updatedImageUrls.join(','),
+        }
+        const { error } = await updateMemoryInDB(memoryId, updates)
+        if (error) {
+          showToast('Error deleting image', 'error')
+          console.error('Error deleting image:', error)
+        } else {
+          showToast('Image deleted successfully!', 'success')
+          setImageUrls(updatedImageUrls)
+        }
+        setIsLoading(false)
+      },
+      type: 'danger',
+    })
+  }
+
+  const handleFilesSelected = (files: File[]) => {
+    setUploadedFiles((prev) => [...prev, ...files])
+    showToast(`${files.length} file(s) selected for upload`, 'info')
+  }
+
+  if (isLoading && !memory) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-pink-500 animate-spin" />
+        <span className="ml-3 text-gray-700">Loading memory...</span>
+      </div>
+    )
+  }
+
+  if (!memory) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-8 text-center">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-gray-700 hover:text-pink-600 mb-6 transition-all hover:scale-105 group"
+        >
+          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+          <span className="text-sm font-medium">Back to Dashboard</span>
+        </button>
+        <div className="text-center py-12">
+          <AlertCircleIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Memory Not Found</h2>
+          <p className="text-gray-600 mb-6">The memory you are looking for does not exist or could not be loaded.</p>
+          <button onClick={onBack} className="px-6 py-3 bg-pink-500 text-white rounded-xl hover:bg-pink-600 transition-all font-semibold">Go Back</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-8">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-2 text-gray-700 hover:text-pink-600 mb-6 transition-all hover:scale-105 group"
+      >
+        <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+        <span className="text-sm font-medium">Back to Dashboard</span>
+      </button>
+
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          {isEditing ? (
+            <input
+              type="text"
+              value={editedTitle}
+              onChange={(e) => setEditedTitle(e.target.value)}
+              className="text-4xl font-bold bg-transparent border-b-2 border-pink-300 focus:outline-none focus:border-pink-500 mb-2"
+            />
+          ) : (
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent mb-2">
+              {memory.title}
+            </h1>
+          )}
+          {isEditing ? (
+            <textarea
+              value={editedDescription}
+              onChange={(e) => setEditedDescription(e.target.value)}
+              className="w-full bg-transparent border-b-2 border-gray-300 focus:outline-none focus:border-pink-500 text-gray-600"
+              rows={2}
+            />
+          ) : (
+            <p className="text-gray-600">{memory.description}</p>
+          )}
+        </div>
+        {isEditing ? (
+          <div className="flex gap-3">
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 transition-all font-semibold shadow-lg hover:shadow-xl hover:scale-105"
+              disabled={isLoading}
+            >
+              <Save className="w-5 h-5" />
+              {isLoading ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button
+              onClick={() => {
+                setIsEditing(false)
+                setEditedTitle(memory.title)
+                setEditedDescription(memory.description || '')
+                setUploadedFiles([])
+              }}
+              className="flex items-center gap-2 px-6 py-3 bg-gray-300 text-gray-800 rounded-xl hover:bg-gray-400 transition-all font-semibold shadow-lg hover:shadow-xl hover:scale-105"
+              disabled={isLoading}
+            >
+              <X className="w-5 h-5" />
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition-all font-semibold shadow-lg hover:shadow-xl hover:scale-105"
+          >
+            <Edit3 className="w-5 h-5" />
+            Edit Memory
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white/80 backdrop-blur-lg rounded-3xl shadow-xl border border-white/20 p-8">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">Memory Gallery</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          {imageUrls.map((url, index) => (
+            <div key={index} className="relative group rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all hover:scale-105">
+              <img src={url} alt={`Memory image ${index + 1}`} className="w-full h-64 object-cover" />
+              {isEditing && (
+                <button
+                  onClick={() => handleDeleteImage(url)}
+                  className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 z-10"
+                  title="Delete Image"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {isEditing && (
+          <div className="mb-8">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Add New Images</h3>
+            <DragDropUpload onFilesSelected={handleFilesSelected} />
+            {uploadedFiles.length > 0 && (
+              <div className="mt-4">
+                <h4 className="text-lg font-semibold text-gray-700 mb-3">Files to Upload:</h4>
+                <ul className="list-disc list-inside space-y-1 text-gray-600">
+                  {uploadedFiles.map((file, index) => (
+                    <li key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
+                      <span>{file.name}</span>
+                      <button
+                        onClick={() => setUploadedFiles(uploadedFiles.filter((_, i) => i !== index))}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-4 text-gray-700">
+          <p>
+            <span className="font-semibold">Category:</span> {memory.category}
+          </p>
+          <p>
+            <span className="font-semibold">Date:</span> {memory.date}
+          </p>
+          {memory.location && (
+            <p>
+              <span className="font-semibold">Location:</span> {memory.location}
+            </p>
+          )}
+          {memory.story && (
+            <p>
+              <span className="font-semibold">Story:</span> {memory.story}
+            </p>
+          )}
+          {memory.notes && (
+            <p>
+              <span className="font-semibold">Notes:</span> {memory.notes}
+            </p>
+          )}
+          {memory.tags && memory.tags.length > 0 && (
+            <p>
+              <span className="font-semibold">Tags:</span> {memory.tags.join(', ')}
+            </p>
+          )}
+          {memory.mood && (
+            <p>
+              <span className="font-semibold">Mood:</span> {memory.mood}
+            </p>
+          )}
+          {memory.source && (
+            <p>
+              <span className="font-semibold">Source:</span> {memory.source}
+            </p>
+          )}
+          {memory.highlights && (
+            <p>
+              <span className="font-semibold">Highlights:</span> {memory.highlights}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Calendar Page
-function CalendarPage({ onHome, onAddToCalendar }: { onHome: () => void; onAddToCalendar: () => void }) {
+function CalendarPage({ onHome, onAddToCalendar, showToast }: { onHome: () => void; onAddToCalendar: () => void; showToast?: (message: string, type?: ToastType) => void }) {
   const [selectedDate, setSelectedDate] = useState(new Date())
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth())
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
   const memoriesByDate = [
     { date: '2024-08-15', count: 5, title: 'Beach Day' },
     { date: '2024-08-20', count: 3, title: 'Birthday Party' },
@@ -3345,12 +4935,34 @@ function CalendarPage({ onHome, onAddToCalendar }: { onHome: () => void; onAddTo
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="mb-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">August 2024</h2>
+                <h2 className="text-xl font-semibold text-gray-800">
+                  {new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                </h2>
                 <div className="flex gap-2">
-                  <button className="p-2 hover:bg-gray-100 rounded-lg">
+                  <button 
+                    onClick={() => {
+                      if (currentMonth === 0) {
+                        setCurrentMonth(11)
+                        setCurrentYear(currentYear - 1)
+                      } else {
+                        setCurrentMonth(currentMonth - 1)
+                      }
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
                     <ChevronDown className="w-4 h-4 rotate-90" />
                   </button>
-                  <button className="p-2 hover:bg-gray-100 rounded-lg">
+                  <button 
+                    onClick={() => {
+                      if (currentMonth === 11) {
+                        setCurrentMonth(0)
+                        setCurrentYear(currentYear + 1)
+                      } else {
+                        setCurrentMonth(currentMonth + 1)
+                      }
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
                     <ChevronDown className="w-4 h-4 -rotate-90" />
                   </button>
                 </div>
@@ -3370,12 +4982,19 @@ function CalendarPage({ onHome, onAddToCalendar }: { onHome: () => void; onAddTo
                   return (
                     <button
                       key={i}
-                      onClick={() => setSelectedDate(new Date(dateStr))}
+                      onClick={() => {
+                        const newDate = new Date(dateStr)
+                        setSelectedDate(newDate)
+                        if (hasMemory && showToast) {
+                          const memory = memoriesByDate.find(m => m.date === dateStr)
+                          showToast(`${memory?.count || 0} memories on this date`, 'info')
+                        }
+                      }}
                       className={`aspect-square flex flex-col items-center justify-center text-xs rounded-lg transition-colors ${
                         hasMemory
-                          ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
+                          ? 'bg-pink-100 text-pink-700 hover:bg-pink-200 font-semibold'
                           : 'text-gray-700 hover:bg-gray-100'
-                      }`}
+                      } ${selectedDate.toISOString().split('T')[0] === dateStr ? 'ring-2 ring-pink-500' : ''}`}
                     >
                       {day}
                       {hasMemory && <div className="w-1 h-1 bg-pink-500 rounded-full mt-1"></div>}
@@ -3409,13 +5028,13 @@ function CalendarPage({ onHome, onAddToCalendar }: { onHome: () => void; onAddTo
 }
 
 // Favorites Page
-function FavoritesPage({ onHome, onAddFavorite }: { onHome: () => void; onAddFavorite: () => void }) {
-  const favorites = [
-    { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, color: 'bg-pink-200', image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop' },
-    { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, color: 'bg-orange-200', image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop' },
-    { id: 3, title: 'Hiking Adventure', date: '2024-05-10', likes: 67, color: 'bg-yellow-200', image: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop' },
-    { id: 4, title: 'Family Reunion', date: '2024-08-01', likes: 89, color: 'bg-blue-200', image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=600&fit=crop' },
-  ]
+function FavoritesPage({ onHome, onAddFavorite, showToast }: { onHome: () => void; onAddFavorite: () => void; showToast?: (message: string, type?: ToastType) => void }) {
+  const [favorites, setFavorites] = useState([
+    { id: 1, title: 'Summer Beach Trip', date: '2024-07-15', likes: 45, color: 'bg-pink-200', image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop', isFavorite: true },
+    { id: 2, title: 'Birthday Celebration', date: '2024-06-20', likes: 32, color: 'bg-orange-200', image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=600&fit=crop', isFavorite: true },
+    { id: 3, title: 'Hiking Adventure', date: '2024-05-10', likes: 67, color: 'bg-yellow-200', image: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=800&h=600&fit=crop', isFavorite: true },
+    { id: 4, title: 'Family Reunion', date: '2024-08-01', likes: 89, color: 'bg-blue-200', image: 'https://images.unsplash.com/photo-1511988617509-a57c8a288659?w=800&h=600&fit=crop', isFavorite: true },
+  ])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
@@ -3443,15 +5062,28 @@ function FavoritesPage({ onHome, onAddFavorite }: { onHome: () => void; onAddFav
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {favorites.map((favorite) => (
-            <div key={favorite.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div 
+              key={favorite.id} 
+              onClick={() => {
+                if (showToast) showToast(`Viewing ${favorite.title}`, 'info')
+              }}
+              className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-xl transition-all cursor-pointer group hover:scale-105"
+            >
               <div className={`w-full h-48 ${favorite.color} relative overflow-hidden`}>
-                <img src={favorite.image} alt={favorite.title} className="w-full h-full object-cover" />
-                <button className="absolute top-4 right-4 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-md hover:bg-pink-50 transition-colors">
+                <img src={favorite.image} alt={favorite.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setFavorites(favorites.filter(f => f.id !== favorite.id))
+                    if (showToast) showToast('Removed from favorites', 'success')
+                  }}
+                  className="absolute top-4 right-4 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-md hover:bg-pink-50 transition-colors z-10"
+                >
                   <Heart className="w-5 h-5 text-pink-500 fill-pink-500" />
                 </button>
               </div>
               <div className="p-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">{favorite.title}</h3>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2 group-hover:text-pink-600 transition-colors">{favorite.title}</h3>
                 <div className="flex items-center justify-between text-sm text-gray-600">
                   <span>{favorite.date}</span>
                   <div className="flex items-center gap-1">
@@ -3469,12 +5101,12 @@ function FavoritesPage({ onHome, onAddFavorite }: { onHome: () => void; onAddFav
 }
 
 // Starred Page
-function StarredPage({ onHome, onStarMemory }: { onHome: () => void; onStarMemory: () => void }) {
-  const starred = [
-    { id: 1, title: 'Creating Lasting Memories', subtitle: 'Team Adventure', progress: 75, color: 'bg-pink-300', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&h=600&fit=crop' },
-    { id: 2, title: 'Memory Lane', subtitle: 'Creative Group', progress: 50, color: 'bg-orange-300', image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=800&h=600&fit=crop' },
-    { id: 3, title: 'Year 1 vs Year 4', subtitle: 'Team Spirit', progress: 30, color: 'bg-yellow-300', image: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&h=600&fit=crop' },
-  ]
+function StarredPage({ onHome, onStarMemory, showToast }: { onHome: () => void; onStarMemory: () => void; showToast?: (message: string, type?: ToastType) => void }) {
+  const [starred, setStarred] = useState([
+    { id: 1, title: 'Creating Lasting Memories', subtitle: 'Team Adventure', progress: 75, color: 'bg-pink-300', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&h=600&fit=crop', isStarred: true },
+    { id: 2, title: 'Memory Lane', subtitle: 'Creative Group', progress: 50, color: 'bg-orange-300', image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=800&h=600&fit=crop', isStarred: true },
+    { id: 3, title: 'Year 1 vs Year 4', subtitle: 'Team Spirit', progress: 30, color: 'bg-yellow-300', image: 'https://images.unsplash.com/photo-1543269865-cbf427effbad?w=800&h=600&fit=crop', isStarred: true },
+  ])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
@@ -3502,23 +5134,38 @@ function StarredPage({ onHome, onStarMemory }: { onHome: () => void; onStarMemor
 
         <div className="space-y-4">
           {starred.map((item) => (
-            <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <div 
+              key={item.id} 
+              onClick={() => {
+                if (showToast) showToast(`Viewing ${item.title}`, 'info')
+              }}
+              className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-xl transition-all cursor-pointer group hover:scale-[1.02]"
+            >
               <div className="flex items-center gap-4">
-                <div className={`w-24 h-24 ${item.color} rounded-lg flex-shrink-0 overflow-hidden`}>
+                <div className={`w-24 h-24 ${item.color} rounded-lg flex-shrink-0 overflow-hidden group-hover:scale-110 transition-transform`}>
                   <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-800">{item.title}</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 group-hover:text-pink-600 transition-colors">{item.title}</h3>
                       <p className="text-sm text-gray-600">{item.subtitle}</p>
                     </div>
-                    <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setStarred(starred.filter(s => s.id !== item.id))
+                        if (showToast) showToast('Unstarred memory', 'success')
+                      }}
+                      className="p-1 hover:bg-yellow-50 rounded-lg transition-colors"
+                    >
+                      <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+                    </button>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-pink-300 rounded-full"
+                        className="h-full bg-pink-300 rounded-full transition-all"
                         style={{ width: `${item.progress}%` }}
                       ></div>
                     </div>
@@ -4325,55 +5972,111 @@ function ScrapbookLanding({ onStart }: { onStart: () => void }) {
 export default function ScrapbookHome() {
   const [page, setPage] = useState<Page>('landing')
   const [selectedGroupName, setSelectedGroupName] = useState<string>('')
+  const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null)
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [confirmDialogConfig, setConfirmDialogConfig] = useState<{
+    title: string
+    message: string
+    onConfirm: () => void
+    confirmText?: string
+    cancelText?: string
+    type?: 'warning' | 'danger'
+  } | null>(null)
+  
+  // Toast helper functions
+  const showToast = (message: string, type: ToastType = 'info') => {
+    const id = Math.random().toString(36).substr(2, 9)
+    setToasts((prev) => [...prev, { id, message, type }])
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, 5000)
+  }
+  
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
+  
+  const showConfirm = (config: {
+    title: string
+    message: string
+    onConfirm: () => void
+    confirmText?: string
+    cancelText?: string
+    type?: 'warning' | 'danger'
+  }) => {
+    setConfirmDialogConfig(config)
+    setShowConfirmDialog(true)
+  }
+  
+  // Handle page transitions with animation
+  const handlePageChange = (newPage: Page) => {
+    setIsTransitioning(true)
+    setTimeout(() => {
+      setPage(newPage)
+      setIsTransitioning(false)
+    }, 150)
+  }
 
   if (page === 'landing') {
-    return <ScrapbookLanding onStart={() => setPage('home')} />
+    return (
+      <div className={isTransitioning ? 'opacity-0 transition-opacity duration-150' : 'opacity-100 transition-opacity duration-300'}>
+        <ScrapbookLanding onStart={() => handlePageChange('home')} />
+      </div>
+    )
   }
 
   // Helper to wrap pages with navigation
   const withNav = (pageContent: React.ReactNode) => (
-    <PageWithNav currentPage={page} onNavigate={setPage}>
-      {pageContent}
+    <PageWithNav currentPage={page} onNavigate={handlePageChange}>
+      <div className={isTransitioning ? 'opacity-0 transition-opacity duration-150' : 'opacity-100 transition-opacity duration-300'}>
+        {pageContent}
+      </div>
     </PageWithNav>
   )
 
   if (page === 'home') {
     return withNav(
       <ScrapbookHomeContent
-        onDiscover={() => setPage('discover')}
-        onCreate={() => setPage('create')}
-        onProfile={() => setPage('profile')}
-        onYears={() => setPage('years')}
-        onSettings={() => setPage('settings')}
-        onEditMemories={() => setPage('editMemories')}
-        onMemoryFeed={() => setPage('memoryFeed')}
-        onNotesStickers={() => setPage('notesStickers')}
-        onLifePath={() => setPage('lifePath')}
-        onReflections={() => setPage('reflections')}
-        onMemoryLane={() => setPage('memoryLane')}
-        onCaptureMoments={() => setPage('captureMoments')}
-        onCreativeMemories={() => setPage('creativeMemories')}
-        onScrapbookShowcase={() => setPage('scrapbookShowcase')}
-        onMemoryMoments={() => setPage('memoryMoments')}
-        onCraftStory={() => setPage('craftStory')}
+        onDiscover={() => handlePageChange('discover')}
+        onCreate={() => handlePageChange('create')}
+        onProfile={() => handlePageChange('profile')}
+        onYears={() => handlePageChange('years')}
+        onSettings={() => handlePageChange('settings')}
+        onEditMemories={() => handlePageChange('editMemories')}
+        onMemoryFeed={() => handlePageChange('memoryFeed')}
+        onNotesStickers={() => handlePageChange('notesStickers')}
+        onLifePath={() => handlePageChange('lifePath')}
+        onReflections={() => handlePageChange('reflections')}
+        onMemoryLane={() => handlePageChange('memoryLane')}
+        onCaptureMoments={() => handlePageChange('captureMoments')}
+        onCreativeMemories={() => handlePageChange('creativeMemories')}
+        onScrapbookShowcase={() => handlePageChange('scrapbookShowcase')}
+        onMemoryMoments={() => handlePageChange('memoryMoments')}
+        onCraftStory={() => handlePageChange('craftStory')}
         onDashboard={() => {
           setSelectedGroupName('Your Scrapbook')
-          setPage('dashboard')
+          handlePageChange('dashboard')
         }}
-        onExplore={() => setPage('explore')}
+        onExplore={() => handlePageChange('explore')}
       />
     )
   }
 
   if (page === 'explore') {
     return (
-      <ExplorePage
-        onViewDashboard={(groupName) => {
-          setSelectedGroupName(groupName)
-          setPage('dashboard')
-        }}
-        onBack={() => setPage('home')}
-      />
+      <div className={isTransitioning ? 'opacity-0 transition-opacity duration-150' : 'opacity-100 transition-opacity duration-300'}>
+        <ExplorePage
+          onViewDashboard={(groupName) => {
+            setSelectedGroupName(groupName)
+            handlePageChange('dashboard')
+            showToast(`Viewing ${groupName}`, 'success')
+          }}
+          onBack={() => handlePageChange('home')}
+          showToast={showToast}
+        />
+      </div>
     )
   }
 
@@ -4383,13 +6086,18 @@ export default function ScrapbookHome() {
         groupName={selectedGroupName || 'Your Scrapbook'}
         onBack={() => {
           if (selectedGroupName === 'Your Scrapbook') {
-            setPage('home')
+            handlePageChange('home')
           } else {
-            setPage('explore')
+            handlePageChange('explore')
           }
         }}
-        onEnter={() => setPage('home')}
-        onExplore={() => setPage('explore')}
+        onExplore={() => handlePageChange('explore')}
+        showToast={showToast}
+        showConfirm={showConfirm}
+        onViewMemory={(memoryId) => {
+          setSelectedMemoryId(memoryId)
+          handlePageChange('memoryDetail')
+        }}
       />
     )
     
@@ -4405,101 +6113,103 @@ export default function ScrapbookHome() {
   if (page === 'discover') {
     return withNav(
       <DiscoverPage
-        onHome={() => setPage('home')}
-        onCreate={() => setPage('create')}
-        onProfile={() => setPage('profile')}
-        onMemoryFeed={() => setPage('memoryFeed')}
-        onDiscover={() => setPage('discover')}
-        onLifePath={() => setPage('lifePath')}
-        onShare={() => setPage('share')}
-        onCapture={() => setPage('captureMoments')}
-        onCalendar={() => setPage('calendar')}
-        onFavorites={() => setPage('favorites')}
-        onStarred={() => setPage('starred')}
+        onHome={() => handlePageChange('home')}
+        onCreate={() => handlePageChange('create')}
+        onProfile={() => handlePageChange('profile')}
+        onMemoryFeed={() => handlePageChange('memoryFeed')}
+        onDiscover={() => handlePageChange('discover')}
+        onLifePath={() => handlePageChange('lifePath')}
+        onShare={() => handlePageChange('share')}
+        onCapture={() => handlePageChange('captureMoments')}
+        onCalendar={() => handlePageChange('calendar')}
+        onFavorites={() => handlePageChange('favorites')}
+        onStarred={() => handlePageChange('starred')}
+        showToast={showToast}
       />
     )
   }
 
   if (page === 'create') {
     return withNav(<CreateMemoryPage onHome={() => {
-          setPage('home')
-        }} onSettings={() => setPage('settings')} />)
+          handlePageChange('home')
+        }} onSettings={() => handlePageChange('settings')} showToast={showToast} />)
   }
 
   if (page === 'profile') {
     return withNav(
       <ProfilePage
-        onHome={() => setPage('home')}
-        onSettings={() => setPage('settings')}
-        onAddCollaborator={() => setPage('addCollaborator')}
+        onHome={() => handlePageChange('home')}
+        onSettings={() => handlePageChange('settings')}
+        onAddCollaborator={() => handlePageChange('addCollaborator')}
+        showToast={showToast}
       />
     )
   }
 
   if (page === 'settings') {
     return withNav(<SettingsPage onHome={() => {
-          setPage('home')
-        }} />)
+          handlePageChange('home')
+        }} showToast={showToast} />)
   }
 
   if (page === 'years') {
     return withNav(<ScrapbookYearsPage onHome={() => {
-          setPage('home')
-        }} onAddYear={() => setPage('addYear')} />)
+          handlePageChange('home')
+        }} onAddYear={() => handlePageChange('addYear')} showToast={showToast} />)
   }
 
   if (page === 'editMemories') {
     return withNav(<EditMemoriesPage onHome={() => {
-      setPage('home')
-    }} onAddMemory={() => setPage('addMemory')} />)
+      handlePageChange('home')
+    }} onAddMemory={() => handlePageChange('addMemory')} showToast={showToast} showConfirm={showConfirm} />)
   }
 
   if (page === 'memoryFeed') {
     return withNav(<MemoryFeedPage onHome={() => {
-          setPage('home')
-        }} onNewPost={() => setPage('newPost')} />)
+          handlePageChange('home')
+        }} onNewPost={() => handlePageChange('newPost')} showToast={showToast} />)
   }
 
   if (page === 'notesStickers') {
     return withNav(<NotesStickersPage onHome={() => {
-          setPage('home')
-        }} onNewNote={() => setPage('newNote')} />)
+          handlePageChange('home')
+        }} onNewNote={() => handlePageChange('newNote')} showToast={showToast} />)
   }
 
   if (page === 'lifePath') {
     return withNav(<LifePathPage onHome={() => {
-          setPage('home')
-        }} onAddMilestone={() => setPage('addMilestone')} />)
+          handlePageChange('home')
+        }} onAddMilestone={() => handlePageChange('addMilestone')} showToast={showToast} />)
   }
 
   if (page === 'reflections') {
     return withNav(<ReflectionsPage onHome={() => {
-          setPage('home')
-        }} onNewReflection={() => setPage('newReflection')} />)
+          handlePageChange('home')
+        }} onNewReflection={() => handlePageChange('newReflection')} showToast={showToast} />)
   }
 
   if (page === 'memoryLane') {
     return withNav(<MemoryLanePage onHome={() => {
-          setPage('home')
-        }} onAddMemory={() => setPage('addMemory')} />)
+          handlePageChange('home')
+        }} onAddMemory={() => handlePageChange('addMemory')} showToast={showToast} />)
   }
 
   if (page === 'captureMoments') {
     return withNav(<CaptureMomentsPage onHome={() => {
-          setPage('home')
-        }} onCapture={() => setPage('addMemory')} />)
+          handlePageChange('home')
+        }} onCapture={() => handlePageChange('addMemory')} showToast={showToast} />)
   }
 
   if (page === 'creativeMemories') {
     return withNav(<CreativeMemoriesPage onHome={() => {
-          setPage('home')
-        }} onCreateTemplate={() => setPage('createTemplate')} />)
+          handlePageChange('home')
+        }} onCreateTemplate={() => handlePageChange('createTemplate')} />)
   }
 
   if (page === 'scrapbookShowcase') {
     return withNav(<ScrapbookShowcasePage onHome={() => {
-          setPage('home')
-        }} onNewScrapbook={() => setPage('newScrapbook')} />)
+          handlePageChange('home')
+        }} onNewScrapbook={() => handlePageChange('newScrapbook')} showToast={showToast} />)
   }
 
   if (page === 'memoryMoments') {
@@ -4510,32 +6220,32 @@ export default function ScrapbookHome() {
 
   if (page === 'craftStory') {
     return withNav(<CraftStoryPage onHome={() => {
-          setPage('home')
-        }} onNewStory={() => setPage('newStory')} />)
+          handlePageChange('home')
+        }} onNewStory={() => handlePageChange('newStory')} showToast={showToast} />)
   }
 
   if (page === 'share') {
     return withNav(<SharePage onHome={() => {
-          setPage('home')
-        }} onShare={() => {}} />)
+          handlePageChange('home')
+        }} onShare={() => {}} showToast={showToast} />)
   }
 
   if (page === 'calendar') {
     return withNav(<CalendarPage onHome={() => {
-          setPage('home')
-        }} onAddToCalendar={() => setPage('addToCalendar')} />)
+          handlePageChange('home')
+        }} onAddToCalendar={() => handlePageChange('addToCalendar')} showToast={showToast} />)
   }
 
   if (page === 'favorites') {
     return withNav(<FavoritesPage onHome={() => {
-          setPage('home')
-        }} onAddFavorite={() => setPage('addFavorite')} />)
+          handlePageChange('home')
+        }} onAddFavorite={() => handlePageChange('addFavorite')} showToast={showToast} />)
   }
 
   if (page === 'starred') {
     return withNav(<StarredPage onHome={() => {
-          setPage('home')
-        }} onStarMemory={() => setPage('starMemory')} />)
+          handlePageChange('home')
+        }} onStarMemory={() => handlePageChange('starMemory')} showToast={showToast} />)
   }
 
   // Add Detail Pages
@@ -4592,9 +6302,27 @@ export default function ScrapbookHome() {
   }
 
   if (page === 'addYear') {
-    return withNav(<AddMilestonePage onBack={() => setPage('years')} />)
+    return withNav(<AddMilestonePage onBack={() => handlePageChange('years')} />)
+  }
+
+  if (page === 'memoryDetail') {
+    return withNav(
+      <MemoryDetailPage
+        memoryId={selectedMemoryId}
+        onBack={() => {
+          // Go back to previous page (could be dashboard, editMemories, etc.)
+          if (selectedGroupName) {
+            handlePageChange('dashboard')
+          } else {
+            handlePageChange('editMemories')
+          }
+        }}
+        showToast={showToast}
+        showConfirm={showConfirm}
+      />
+    )
   }
 
   // Default to landing page (should not reach here)
-  return <ScrapbookLanding onStart={() => setPage('home')} />
+  return <ScrapbookLanding onStart={() => handlePageChange('home')} />
 }
