@@ -1559,9 +1559,6 @@ function ScrapbookHomeContent({
               <X className="w-5 h-5 text-gray-600" />
             </button>
           </div>
-        <div className="p-6 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-gray-800">Welcome to</h1>
-        </div>
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -1732,9 +1729,11 @@ function ScrapbookHomeContent({
           </div>
         </div>
 
-        <div className="p-6 grid grid-cols-3 gap-6">
-          {/* Main Feed */}
-          <div className="col-span-2 space-y-4">
+        <div className="p-4 md:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+              {/* Main Feed */}
+              <div className="lg:col-span-2 space-y-6">
             {/* Create Post */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
               <div className="flex items-center gap-3 mb-4">
@@ -1887,8 +1886,8 @@ function ScrapbookHomeContent({
             </div>
           </div>
 
-          {/* Right Sidebar */}
-          <div className="space-y-4">
+              {/* Right Sidebar */}
+              <div className="space-y-4 lg:space-y-6">
             {/* Your Scrapbook */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
               <h3 className="font-bold text-gray-900 mb-4 text-sm">Your scrapbook</h3>
@@ -2087,6 +2086,8 @@ function ScrapbookHomeContent({
                     <span className="text-sm text-gray-800">{item}</span>
                   </div>
                 ))}
+              </div>
+            </div>
               </div>
             </div>
           </div>
@@ -6145,8 +6146,8 @@ function ScrapbookLanding({ onStart }: { onStart: () => void }) {
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
       {/* Right side abstract graphic area - grouped shapes cluster - Hidden on mobile */}
-      <div className="hidden md:flex absolute right-0 top-0 bottom-0 w-2/3 pointer-events-none items-center justify-center">
-        <div className="relative w-full h-full max-w-2xl max-h-2xl">
+      <div className="hidden md:block absolute right-0 top-0 bottom-0 w-2/3 pointer-events-none overflow-hidden">
+        <div className="relative w-full h-full max-w-2xl max-h-2xl mx-auto flex items-center justify-center">
           {/* Central cluster of large circles - grouped together */}
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
             {/* Large circles - overlapping cluster */}
